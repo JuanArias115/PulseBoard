@@ -1826,15 +1826,15 @@ static bool TryBuildDailyRecoveryRequest(
     errors = new Dictionary<string, string[]>();
 
     var localDate = ReadString(payload, "localDate", errors);
-    var heartRateBpm = ReadNullableIntAny(payload, ["heartRateBpm", "heartRate", "heardRate"], errors);
-    var restingHeartRateBpm = ReadNullableIntAny(payload, ["restingHeartRateBpm", "restingHeartRate"], errors);
-    var heartRateVariabilityMs = ReadNullableDecimalAny(payload, ["heartRateVariabilityMs", "heartRateVariability", "heartRateVariabilitySDNN", "hrvMs", "hrv"], errors);
-    var bloodOxygenPercentage = ReadNullableDecimalAny(payload, ["bloodOxygenPercentage", "bloodOxygen"], errors);
-    var respiratoryRateBreathsPerMinute = ReadNullableDecimalAny(payload, ["respiratoryRateBreathsPerMinute", "respiratoryRate"], errors);
-    var sleepHours = ReadNullableDecimalAny(payload, ["sleepHours", "timeAsleepHours", "timeAsleep"], errors);
-    var sleepScore = ReadNullableDecimalAny(payload, ["sleepScore"], errors);
-    var vo2Max = ReadNullableDecimalAny(payload, ["vo2Max", "cardioFitness"], errors);
-    var walkingHeartRateAverageBpm = ReadNullableIntAny(payload, ["walkingHeartRateAverageBpm", "walkingHeartRateAverage"], errors);
+    var heartRateBpm = NullIfZeroInt(ReadNullableIntAny(payload, ["heartRateBpm", "heartRate", "heardRate"], errors));
+    var restingHeartRateBpm = NullIfZeroInt(ReadNullableIntAny(payload, ["restingHeartRateBpm", "restingHeartRate"], errors));
+    var heartRateVariabilityMs = NullIfZeroDecimal(ReadNullableDecimalAny(payload, ["heartRateVariabilityMs", "heartRateVariability", "heartRateVariabilitySDNN", "hrvMs", "hrv"], errors));
+    var bloodOxygenPercentage = NullIfZeroDecimal(ReadNullableDecimalAny(payload, ["bloodOxygenPercentage", "bloodOxygen"], errors));
+    var respiratoryRateBreathsPerMinute = NullIfZeroDecimal(ReadNullableDecimalAny(payload, ["respiratoryRateBreathsPerMinute", "respiratoryRate"], errors));
+    var sleepHours = NullIfZeroDecimal(ReadNullableDecimalAny(payload, ["sleepHours", "timeAsleepHours", "timeAsleep"], errors));
+    var sleepScore = NullIfZeroDecimal(ReadNullableDecimalAny(payload, ["sleepScore"], errors));
+    var vo2Max = NullIfZeroDecimal(ReadNullableDecimalAny(payload, ["vo2Max", "cardioFitness"], errors));
+    var walkingHeartRateAverageBpm = NullIfZeroInt(ReadNullableIntAny(payload, ["walkingHeartRateAverageBpm", "walkingHeartRateAverage"], errors));
     var notes = ReadOptionalString(payload, "notes");
 
     if (errors.Count > 0)
@@ -1862,6 +1862,10 @@ static bool TryBuildDailyRecoveryRequest(
 
     return errors.Count == 0;
 }
+
+static int? NullIfZeroInt(int? value) => value == 0 ? null : value;
+
+static decimal? NullIfZeroDecimal(decimal? value) => value == 0 ? null : value;
 
 static string? ReadString(JsonElement payload, string propertyName, IDictionary<string, string[]> errors)
 {

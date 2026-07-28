@@ -351,6 +351,39 @@ public sealed class ApiSmokeTests
     }
 
     [Fact]
+    public async Task AppleHealthBridge_Treats_Recovery_Zero_As_Missing()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+        var today = GetViennaDate();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/integrations/apple-health/daily-recovery")
+        {
+            Content = JsonContent.Create(new Dictionary<string, object?>
+            {
+                ["localDate"] = today,
+                ["heartRate"] = 0,
+                ["restingHeartRate"] = "60 BPM",
+                ["heartRateVariability"] = 0,
+                ["bloodOxygen"] = 0,
+                ["respiratoryRate"] = 0,
+                ["walkingHeartRateAverage"] = 0,
+                ["notes"] = "Apple Health Shortcut"
+            })
+        };
+        request.Headers.Add("X-PulseBoard-Bridge-Key", "test-bridge-key");
+
+        var response = await client.SendAsync(request);
+        var recoveryResponse = await client.GetAsync("/api/v1/daily-recovery?limit=1");
+        var recoveries = await recoveryResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(60, recoveries[0].GetProperty("restingHeartRateBpm").GetInt32());
+        Assert.Equal(JsonValueKind.Null, recoveries[0].GetProperty("heartRateBpm").ValueKind);
+        Assert.Equal(JsonValueKind.Null, recoveries[0].GetProperty("bloodOxygenPercentage").ValueKind);
+    }
+
+    [Fact]
     public async Task AppleHealthBridge_Requires_Key()
     {
         using var application = CreateApplication();
