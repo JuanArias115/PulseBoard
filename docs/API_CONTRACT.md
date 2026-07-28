@@ -75,6 +75,40 @@ La composicion corporal se interpreta como tendencia, no como veredicto exacto d
 }
 ```
 
+## Meals
+
+`POST /api/v1/meals`
+
+```json
+{
+  "localDate": "2026-07-28",
+  "eatenAt": "2026-07-28T12:30:00+02:00",
+  "name": "Pollo con arroz",
+  "mealType": "lunch",
+  "caloriesKcal": 720,
+  "proteinGrams": 48,
+  "carbohydrateGrams": 82,
+  "fatGrams": 18,
+  "hasVegetables": true,
+  "isFavorite": true,
+  "notes": ""
+}
+```
+
+`GET /api/v1/meals?localDate=2026-07-28`
+
+Devuelve las comidas del dia.
+
+`GET /api/v1/meal-favorites`
+
+Devuelve hasta 20 comidas marcadas como favoritas.
+
+`GET /api/v1/nutrition-summary?localDate=2026-07-28`
+
+Devuelve totales del dia, promedio de los ultimos 7 dias con datos y ultimas comidas.
+
+La primera version no calcula objetivos nutricionales automaticos. Solo registra y resume datos.
+
 ## POST /body-measurements
 
 ```json

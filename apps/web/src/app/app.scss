@@ -123,7 +123,7 @@
 
 .summary-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 
@@ -165,6 +165,10 @@
   background: #af52de;
 }
 
+.summary-strip article:nth-child(5) > span {
+  background: #ff9f0a;
+}
+
 .toast {
   margin-bottom: 16px;
   padding: 11px 14px;
@@ -184,7 +188,7 @@
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1.25fr 0.85fr 0.9fr;
+  grid-template-columns: 1.25fr 0.85fr 0.9fr 0.85fr;
   gap: 16px;
   align-items: stretch;
   margin-bottom: 16px;
@@ -258,7 +262,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   min-height: 40px;
   border: 1px solid #dcdce1;
@@ -272,6 +277,10 @@ textarea {
   min-height: 82px;
   padding-block: 10px;
   resize: vertical;
+}
+
+select {
+  appearance: none;
 }
 
 input[type='range'] {
@@ -290,6 +299,10 @@ input[type='range'] {
 
 .form-grid.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wide-field {
+  grid-column: 1 / -1;
 }
 
 .scale-grid {
@@ -476,6 +489,89 @@ input[type='range'] {
   }
 }
 
+.nutrition-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+
+  div {
+    min-height: 74px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #f5f5f7;
+  }
+
+  dt {
+    color: #6e6e73;
+    font-size: 0.78rem;
+  }
+
+  dd {
+    margin: 7px 0 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+  }
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+
+  label {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: #f5f5f7;
+  }
+
+  input {
+    width: 18px;
+    min-height: 18px;
+  }
+}
+
+.meal-list {
+  display: grid;
+  gap: 10px;
+
+  article {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.9fr);
+    gap: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    background: #f5f5f7;
+  }
+
+  strong,
+  span {
+    display: block;
+  }
+
+  span,
+  dt {
+    color: #6e6e73;
+    font-size: 0.78rem;
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+  }
+
+  dd {
+    margin: 4px 0 0;
+    font-weight: 800;
+  }
+}
+
 .metric-list {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   margin: 0;
@@ -518,6 +614,7 @@ input[type='range'] {
   .workspace-grid,
   .dashboard-grid,
   .summary-strip,
+  .nutrition-totals,
   .metric-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -544,6 +641,10 @@ input[type='range'] {
   .form-grid.two,
   .scale-grid,
   .trend-cards,
+  .nutrition-totals,
+  .check-row,
+  .meal-list article,
+  .meal-list dl,
   .metric-list {
     grid-template-columns: 1fr;
   }

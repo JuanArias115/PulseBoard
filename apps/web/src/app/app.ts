@@ -65,6 +65,20 @@ interface BodyMeasurement {
   source: string;
 }
 
+interface Meal {
+  id: string;
+  localDate: string;
+  name: string;
+  mealType: string;
+  caloriesKcal: number;
+  proteinGrams: number;
+  carbohydrateGrams: number;
+  fatGrams: number;
+  hasVegetables: boolean;
+  isFavorite: boolean;
+  eatenAtUtc: string;
+}
+
 interface DashboardSummary {
   generatedAtUtc: string;
   localDate: string;
@@ -83,12 +97,29 @@ interface DashboardSummary {
     completionRate7Days: number;
     streakDays: number;
   };
+  nutrition: NutritionSummary;
   body: {
     latest?: BodyMeasurement;
     trends: TrendMetric[];
     history: BodyHistoryPoint[];
   };
   insights: Insight[];
+}
+
+interface NutritionSummary {
+  today: NutritionTotals;
+  average7Days: NutritionTotals;
+  loggedDays7: number;
+  latestMeals: Meal[];
+}
+
+interface NutritionTotals {
+  meals: number;
+  caloriesKcal: number;
+  proteinGrams: number;
+  carbohydrateGrams: number;
+  fatGrams: number;
+  vegetableMeals: number;
 }
 
 interface TrendMetric {
@@ -130,6 +161,7 @@ const translations = {
     apiOffline: 'API sin conexion',
     apiOnline: 'API conectada',
     body: 'Composicion',
+    carbs: 'Carbohidratos',
     calories: 'Calorias',
     checkIn: 'Check-in',
     complete: 'Completar',
@@ -138,10 +170,12 @@ const translations = {
     data: 'Datos',
     dataQuality: 'Calidad de datos',
     date: 'Fecha',
+    dinner: 'Cena',
     energy: 'Energia',
     estimatedCalories: 'Calorias estimadas',
     fatigue: 'Fatiga',
     food: 'Alimentacion',
+    fat: 'Grasas',
     habitName: 'Nombre del habito',
     habits: 'Habitos',
     hunger: 'Hambre',
@@ -149,17 +183,24 @@ const translations = {
     insight: 'Observaciones',
     latest: 'Actual',
     latestBody: 'Ultima medicion',
+    lunch: 'Almuerzo',
+    mealName: 'Nombre de comida',
+    mealType: 'Tipo',
+    meals: 'Comidas',
     mood: 'Animo',
     muscle: 'Musculo',
     newHabit: 'Nuevo habito',
     noTrend: 'Sin tendencia',
     note: 'Nota',
+    nutrition: 'Nutricion',
+    protein: 'Proteina',
     quickCheckIn: 'Check-in diario',
     readiness: 'Preparacion',
     recovery: 'Recuperacion',
     refresh: 'Actualizar',
     save: 'Guardar',
     saveMeasurement: 'Guardar medicion',
+    saveMeal: 'Guardar comida',
     sevenDays: '7 dias',
     sleep: 'Sueno',
     sleepHours: 'Horas de sueno',
@@ -182,6 +223,7 @@ const translations = {
     apiOffline: 'API offline',
     apiOnline: 'API connected',
     body: 'Body',
+    carbs: 'Carbs',
     calories: 'Calories',
     checkIn: 'Check-in',
     complete: 'Complete',
@@ -190,10 +232,12 @@ const translations = {
     data: 'Data',
     dataQuality: 'Data quality',
     date: 'Date',
+    dinner: 'Dinner',
     energy: 'Energy',
     estimatedCalories: 'Estimated calories',
     fatigue: 'Fatigue',
     food: 'Nutrition',
+    fat: 'Fat',
     habitName: 'Habit name',
     habits: 'Habits',
     hunger: 'Hunger',
@@ -201,17 +245,24 @@ const translations = {
     insight: 'Insights',
     latest: 'Current',
     latestBody: 'Latest measurement',
+    lunch: 'Lunch',
+    mealName: 'Meal name',
+    mealType: 'Type',
+    meals: 'Meals',
     mood: 'Mood',
     muscle: 'Muscle',
     newHabit: 'New habit',
     noTrend: 'No trend',
     note: 'Note',
+    nutrition: 'Nutrition',
+    protein: 'Protein',
     quickCheckIn: 'Daily check-in',
     readiness: 'Readiness',
     recovery: 'Recovery',
     refresh: 'Refresh',
     save: 'Save',
     saveMeasurement: 'Save measurement',
+    saveMeal: 'Save meal',
     sevenDays: '7 days',
     sleep: 'Sleep',
     sleepHours: 'Sleep hours',
@@ -262,6 +313,7 @@ export class App {
   readonly completions = signal<HabitCompletion[]>([]);
   readonly checkIns = signal<CheckIn[]>([]);
   readonly measurements = signal<BodyMeasurement[]>([]);
+  readonly meals = signal<Meal[]>([]);
   readonly dashboardSummary = signal<DashboardSummary | null>(null);
   readonly message = signal('');
 
@@ -300,6 +352,7 @@ export class App {
 
   readonly bodyTrends = computed(() => this.dashboardSummary()?.body.trends ?? []);
   readonly insights = computed(() => this.dashboardSummary()?.insights ?? []);
+  readonly nutrition = computed(() => this.dashboardSummary()?.nutrition);
 
   readonly weightChart = computed(() => {
     const points = this.dashboardSummary()?.body.history ?? [];
@@ -353,6 +406,20 @@ export class App {
     notes: 'Soehnle',
   };
 
+  mealForm = {
+    localDate: this.today,
+    eatenAt: this.toDateTimeLocal(new Date()),
+    name: '',
+    mealType: 'meal',
+    caloriesKcal: 650,
+    proteinGrams: 35,
+    carbohydrateGrams: 70,
+    fatGrams: 20,
+    hasVegetables: false,
+    isFavorite: false,
+    notes: '',
+  };
+
   constructor() {
     this.load();
   }
@@ -380,14 +447,16 @@ export class App {
       ),
       checkIns: this.http.get<CheckIn[]>('/api/v1/check-ins?limit=7'),
       measurements: this.http.get<BodyMeasurement[]>('/api/v1/body-measurements?limit=7'),
+      meals: this.http.get<Meal[]>(`/api/v1/meals?localDate=${this.mealForm.localDate}`),
     }).subscribe({
-      next: ({ meta, dashboard, habits, completions, checkIns, measurements }) => {
+      next: ({ meta, dashboard, habits, completions, checkIns, measurements, meals }) => {
         this.meta.set(meta);
         this.dashboardSummary.set(dashboard);
         this.habits.set(habits);
         this.completions.set(completions);
         this.checkIns.set(checkIns);
         this.measurements.set(measurements);
+        this.meals.set(meals);
         this.apiStatus.set('online');
       },
       error: () => this.apiStatus.set('offline'),
@@ -456,6 +525,27 @@ export class App {
       .subscribe({
         next: () => this.afterSave('Medicion guardada'),
         error: () => this.message.set('No se pudo guardar la medicion'),
+      });
+  }
+
+  saveMeal(): void {
+    this.http
+      .post('/api/v1/meals', {
+        ...this.mealForm,
+        eatenAt: new Date(this.mealForm.eatenAt).toISOString(),
+      })
+      .subscribe({
+        next: () => {
+          this.mealForm = {
+            ...this.mealForm,
+            name: '',
+            hasVegetables: false,
+            isFavorite: false,
+            notes: '',
+          };
+          this.afterSave('Comida guardada');
+        },
+        error: () => this.message.set('No se pudo guardar la comida'),
       });
   }
 

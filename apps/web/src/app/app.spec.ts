@@ -48,6 +48,26 @@ describe('App', () => {
         completionRate7Days: 50,
         streakDays: 1,
       },
+      nutrition: {
+        today: {
+          meals: 1,
+          caloriesKcal: 720,
+          proteinGrams: 48,
+          carbohydrateGrams: 82,
+          fatGrams: 18,
+          vegetableMeals: 1,
+        },
+        average7Days: {
+          meals: 1,
+          caloriesKcal: 720,
+          proteinGrams: 48,
+          carbohydrateGrams: 82,
+          fatGrams: 18,
+          vegetableMeals: 1,
+        },
+        loggedDays7: 1,
+        latestMeals: [],
+      },
       body: {
         latest: null,
         trends: [],
@@ -66,6 +86,7 @@ describe('App', () => {
     http.expectOne((request) => request.url.startsWith('/api/v1/habit-completions')).flush([]);
     http.expectOne('/api/v1/check-ins?limit=7').flush([]);
     http.expectOne('/api/v1/body-measurements?limit=7').flush([]);
+    http.expectOne((request) => request.url.startsWith('/api/v1/meals')).flush([]);
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;

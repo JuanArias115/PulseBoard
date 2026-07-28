@@ -133,6 +133,11 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
         .Where(completion => recentDates.Contains(completion.LocalDate))
         .ToListAsync();
 
+    var meals = await db.Meals
+        .Where(meal => recentDates.Contains(meal.LocalDate))
+        .OrderByDescending(meal => meal.EatenAtUtc)
+        .ToListAsync();
+
     var measurements = await db.BodyMeasurements
         .Where(measurement => measurement.MeasuredAtUtc >= nowUtc.AddDays(-90))
         .OrderByDescending(measurement => measurement.MeasuredAtUtc)
@@ -175,6 +180,7 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
             CompletedToday: completionsToday,
             CompletionRate7Days: completionRate,
             StreakDays: BuildHabitStreak(recentDates, habits.Count, completions)),
+        Nutrition: BuildNutritionSummary(localToday.ToString("O"), meals),
         Body: new BodyDashboard(
             Latest: latestMeasurement,
             Trends: bodyTrends,
@@ -188,7 +194,7 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
                     MusclePercentage: measurement.MusclePercentage,
                     BodyWaterPercentage: measurement.BodyWaterPercentage))
                 .ToArray()),
-        Insights: insights));
+        Insights: BuildNutritionInsights(localToday.ToString("O"), insights, meals)));
 });
 
 api.MapGet("/check-ins", async (PulseBoardDbContext db, int limit = 14) =>
@@ -322,6 +328,87 @@ api.MapPost("/body-measurements", async (CreateBodyMeasurementRequest request, P
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/v1/body-measurements/{measurement.Id}", measurement);
+});
+
+api.MapGet("/meals", async (PulseBoardDbContext db, string? localDate = null, int limit = 30) =>
+{
+    var safeLimit = Math.Clamp(limit, 1, 120);
+    var query = db.Meals.AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(localDate))
+    {
+        if (!DateOnly.TryParse(localDate, out _))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                [nameof(localDate)] = ["localDate must be a valid date."]
+            });
+        }
+
+        query = query.Where(meal => meal.LocalDate == localDate);
+    }
+
+    var meals = await query
+        .OrderByDescending(meal => meal.EatenAtUtc)
+        .Take(safeLimit)
+        .ToListAsync();
+
+    return Results.Ok(meals);
+});
+
+api.MapGet("/meal-favorites", async (PulseBoardDbContext db) =>
+{
+    var meals = await db.Meals
+        .Where(meal => meal.IsFavorite)
+        .OrderByDescending(meal => meal.CreatedAtUtc)
+        .Take(20)
+        .ToListAsync();
+
+    return Results.Ok(meals);
+});
+
+api.MapGet("/nutrition-summary", async (PulseBoardDbContext db, IConfiguration configuration, string? localDate = null) =>
+{
+    var options = configuration.GetSection(PulseBoardOptions.SectionName).Get<PulseBoardOptions>()
+        ?? new PulseBoardOptions();
+    var date = string.IsNullOrWhiteSpace(localDate)
+        ? GetLocalDate(DateTimeOffset.UtcNow, options.TimeZoneId).ToString("O")
+        : localDate;
+
+    if (!DateOnly.TryParse(date, out _))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [nameof(localDate)] = ["localDate must be a valid date."]
+        });
+    }
+
+    var selectedDate = DateOnly.Parse(date);
+    var recentDates = Enumerable.Range(0, 7)
+        .Select(offset => selectedDate.AddDays(-offset).ToString("O"))
+        .ToArray();
+
+    var meals = await db.Meals
+        .Where(meal => recentDates.Contains(meal.LocalDate))
+        .OrderByDescending(meal => meal.EatenAtUtc)
+        .ToListAsync();
+
+    return Results.Ok(BuildNutritionSummary(date, meals));
+});
+
+api.MapPost("/meals", async (CreateMealRequest request, PulseBoardDbContext db) =>
+{
+    var errors = request.Validate();
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var meal = request.ToEntity();
+    db.Meals.Add(meal);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/v1/meals/{meal.Id}", meal);
 });
 
 api.MapPost("/integrations/apple-health/body-measurements", async (
@@ -574,6 +661,64 @@ static Insight[] BuildInsights(
     return insights.Take(4).ToArray();
 }
 
+static NutritionSummary BuildNutritionSummary(string localDate, IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals)
+{
+    var todayMeals = meals
+        .Where(meal => meal.LocalDate == localDate)
+        .ToArray();
+    var daysWithMeals = meals
+        .Select(meal => meal.LocalDate)
+        .Distinct()
+        .Count();
+
+    return new NutritionSummary(
+        Today: BuildNutritionTotals(todayMeals),
+        Average7Days: daysWithMeals == 0
+            ? new NutritionTotals(0, 0, 0, 0, 0, 0)
+            : new NutritionTotals(
+                Meals: Math.Round((decimal)meals.Count / daysWithMeals, 1),
+                CaloriesKcal: Math.Round((decimal)meals.Sum(meal => meal.CaloriesKcal) / daysWithMeals, 0),
+                ProteinGrams: Round(meals.Sum(meal => meal.ProteinGrams) / daysWithMeals),
+                CarbohydrateGrams: Round(meals.Sum(meal => meal.CarbohydrateGrams) / daysWithMeals),
+                FatGrams: Round(meals.Sum(meal => meal.FatGrams) / daysWithMeals),
+                VegetableMeals: Math.Round((decimal)meals.Count(meal => meal.HasVegetables) / daysWithMeals, 1)),
+        LoggedDays7: daysWithMeals,
+        LatestMeals: meals
+            .OrderByDescending(meal => meal.EatenAtUtc)
+            .Take(5)
+            .ToArray());
+}
+
+static NutritionTotals BuildNutritionTotals(IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals) => new(
+    Meals: meals.Count,
+    CaloriesKcal: meals.Sum(meal => meal.CaloriesKcal),
+    ProteinGrams: Round(meals.Sum(meal => meal.ProteinGrams)),
+    CarbohydrateGrams: Round(meals.Sum(meal => meal.CarbohydrateGrams)),
+    FatGrams: Round(meals.Sum(meal => meal.FatGrams)),
+    VegetableMeals: meals.Count(meal => meal.HasVegetables));
+
+static Insight[] BuildNutritionInsights(string localDate, Insight[] currentInsights, IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals)
+{
+    var insights = currentInsights.ToList();
+    var todayMeals = meals.Where(meal => meal.LocalDate == localDate).ToArray();
+
+    if (todayMeals.Length == 0)
+    {
+        insights.Add(new Insight("nutrition", "info", "Aun no registraste comidas hoy.", "No meals have been logged today yet."));
+    }
+    else if (todayMeals.Sum(meal => meal.ProteinGrams) >= 100)
+    {
+        insights.Add(new Insight("nutrition", "positive", "La proteina registrada hoy ya es alta.", "Logged protein today is already high."));
+    }
+
+    if (todayMeals.Length > 0 && todayMeals.All(meal => !meal.HasVegetables))
+    {
+        insights.Add(new Insight("nutrition", "info", "Hoy no hay comidas marcadas con verduras.", "No meals today are marked with vegetables."));
+    }
+
+    return insights.Take(5).ToArray();
+}
+
 static DateOnly GetLocalDate(DateTimeOffset utcDateTime, string timeZoneId)
 {
     TimeZoneInfo timeZone;
@@ -622,6 +767,37 @@ static async Task EnsureDatabaseAsync(PulseBoardDbContext db)
         CREATE INDEX IF NOT EXISTS "IX_HabitCompletions_HabitId"
             ON "HabitCompletions" ("HabitId");
         """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "Meals" (
+            "Id" uuid NOT NULL,
+            "UserId" character varying(80) NOT NULL,
+            "LocalDate" character varying(10) NOT NULL,
+            "TimeZoneId" character varying(80) NOT NULL,
+            "Name" character varying(160) NOT NULL,
+            "MealType" character varying(40) NOT NULL,
+            "CaloriesKcal" integer NOT NULL,
+            "ProteinGrams" numeric(7,2) NOT NULL,
+            "CarbohydrateGrams" numeric(7,2) NOT NULL,
+            "FatGrams" numeric(7,2) NOT NULL,
+            "HasVegetables" boolean NOT NULL,
+            "IsFavorite" boolean NOT NULL,
+            "Notes" character varying(1000) NULL,
+            "EatenAtUtc" timestamp with time zone NOT NULL,
+            "CreatedAtUtc" timestamp with time zone NOT NULL,
+            CONSTRAINT "PK_Meals" PRIMARY KEY ("Id")
+        );
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_Meals_UserId_LocalDate"
+            ON "Meals" ("UserId", "LocalDate");
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_Meals_UserId_IsFavorite"
+            ON "Meals" ("UserId", "IsFavorite");
+        """);
 }
 
 public partial class Program;
@@ -633,6 +809,7 @@ public sealed record DashboardResponse(
     int ReadinessScore,
     TodaySummary Today,
     HabitSummary Habits,
+    NutritionSummary Nutrition,
     BodyDashboard Body,
     Insight[] Insights);
 
@@ -648,6 +825,20 @@ public sealed record HabitSummary(
     int CompletedToday,
     decimal CompletionRate7Days,
     int StreakDays);
+
+public sealed record NutritionSummary(
+    NutritionTotals Today,
+    NutritionTotals Average7Days,
+    int LoggedDays7,
+    PulseBoard.Api.Models.Meal[] LatestMeals);
+
+public sealed record NutritionTotals(
+    decimal Meals,
+    decimal CaloriesKcal,
+    decimal ProteinGrams,
+    decimal CarbohydrateGrams,
+    decimal FatGrams,
+    decimal VegetableMeals);
 
 public sealed record BodyDashboard(
     PulseBoard.Api.Models.BodyMeasurement? Latest,

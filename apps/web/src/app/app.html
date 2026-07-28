@@ -47,6 +47,11 @@
       <p>{{ t('habits') }}</p>
       <strong>{{ dashboard().habits }}</strong>
     </article>
+    <article>
+      <span><svg lucideUtensils size="20" aria-hidden="true"></svg></span>
+      <p>{{ t('calories') }}</p>
+      <strong>{{ formatNumber(nutrition()?.today?.caloriesKcal, ' kcal') }}</strong>
+    </article>
   </section>
 
   <section class="dashboard-grid">
@@ -120,6 +125,35 @@
           <p class="empty-state">{{ t('dataQuality') }}</p>
         }
       </div>
+    </article>
+
+    <article class="panel nutrition-panel">
+      <div class="panel-heading">
+        <span><svg lucideUtensils size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('today') }}</p>
+          <strong>{{ t('nutrition') }}</strong>
+        </div>
+      </div>
+
+      <dl class="nutrition-totals">
+        <div>
+          <dt>{{ t('meals') }}</dt>
+          <dd>{{ formatNumber(nutrition()?.today?.meals, '') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('protein') }}</dt>
+          <dd>{{ formatNumber(nutrition()?.today?.proteinGrams, ' g') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('carbs') }}</dt>
+          <dd>{{ formatNumber(nutrition()?.today?.carbohydrateGrams, ' g') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('fat') }}</dt>
+          <dd>{{ formatNumber(nutrition()?.today?.fatGrams, ' g') }}</dd>
+        </div>
+      </dl>
     </article>
   </section>
 
@@ -341,6 +375,76 @@
         {{ t('saveMeasurement') }}
       </button>
     </form>
+
+    <form class="panel" (ngSubmit)="saveMeal()">
+      <div class="panel-heading">
+        <span><svg lucideUtensils size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('today') }}</p>
+          <strong>{{ t('food') }}</strong>
+        </div>
+      </div>
+
+      <div class="form-grid two">
+        <label>
+          {{ t('date') }}
+          <input type="date" name="mealLocalDate" [(ngModel)]="mealForm.localDate" />
+        </label>
+        <label>
+          {{ t('mealType') }}
+          <select name="mealType" [(ngModel)]="mealForm.mealType">
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">{{ t('lunch') }}</option>
+            <option value="dinner">{{ t('dinner') }}</option>
+            <option value="snack">Snack</option>
+            <option value="meal">{{ t('meals') }}</option>
+          </select>
+        </label>
+        <label class="wide-field">
+          {{ t('mealName') }}
+          <input type="text" name="mealName" [(ngModel)]="mealForm.name" />
+        </label>
+        <label>
+          {{ t('calories') }}
+          <input type="number" name="caloriesKcal" min="0" max="6000" step="1" [(ngModel)]="mealForm.caloriesKcal" />
+        </label>
+        <label>
+          {{ t('protein') }} g
+          <input type="number" name="proteinGrams" min="0" max="1000" step="1" [(ngModel)]="mealForm.proteinGrams" />
+        </label>
+        <label>
+          {{ t('carbs') }} g
+          <input
+            type="number"
+            name="carbohydrateGrams"
+            min="0"
+            max="1000"
+            step="1"
+            [(ngModel)]="mealForm.carbohydrateGrams"
+          />
+        </label>
+        <label>
+          {{ t('fat') }} g
+          <input type="number" name="fatGrams" min="0" max="1000" step="1" [(ngModel)]="mealForm.fatGrams" />
+        </label>
+      </div>
+
+      <div class="check-row">
+        <label>
+          <input type="checkbox" name="hasVegetables" [(ngModel)]="mealForm.hasVegetables" />
+          Verduras
+        </label>
+        <label>
+          <input type="checkbox" name="isFavorite" [(ngModel)]="mealForm.isFavorite" />
+          Favorito
+        </label>
+      </div>
+
+      <button type="submit" class="primary-action">
+        <svg lucideSave size="18" aria-hidden="true"></svg>
+        {{ t('saveMeal') }}
+      </button>
+    </form>
   </section>
 
   <section class="history-grid">
@@ -388,6 +492,43 @@
       <span><svg lucideDumbbell size="18" aria-hidden="true"></svg> Strava</span>
       <span><svg lucideDroplet size="18" aria-hidden="true"></svg> Apple Health bridge</span>
       <span><svg lucideUtensils size="18" aria-hidden="true"></svg> {{ t('food') }}</span>
+    </article>
+
+    <article class="panel compact-panel">
+      <div class="panel-heading">
+        <span><svg lucideUtensils size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('today') }}</p>
+          <strong>{{ t('meals') }}</strong>
+        </div>
+      </div>
+
+      <div class="meal-list">
+        @for (meal of meals(); track meal.id) {
+          <article>
+            <div>
+              <strong>{{ meal.name }}</strong>
+              <span>{{ meal.mealType }} · {{ formatNumber(meal.caloriesKcal, ' kcal') }}</span>
+            </div>
+            <dl>
+              <div>
+                <dt>{{ t('protein') }}</dt>
+                <dd>{{ formatNumber(meal.proteinGrams, ' g') }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('carbs') }}</dt>
+                <dd>{{ formatNumber(meal.carbohydrateGrams, ' g') }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('fat') }}</dt>
+                <dd>{{ formatNumber(meal.fatGrams, ' g') }}</dd>
+              </div>
+            </dl>
+          </article>
+        } @empty {
+          <p class="empty-state">{{ t('food') }}</p>
+        }
+      </div>
     </article>
   </section>
 </main>

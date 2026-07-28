@@ -13,6 +13,8 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
 
     public DbSet<BodyMeasurement> BodyMeasurements => Set<BodyMeasurement>();
 
+    public DbSet<Meal> Meals => Set<Meal>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CheckIn>(entity =>
@@ -64,6 +66,22 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
             entity.Property(measurement => measurement.BodyWaterPercentage).HasPrecision(5, 2);
             entity.Property(measurement => measurement.BodyMassIndex).HasPrecision(5, 2);
             entity.HasIndex(measurement => new { measurement.UserId, measurement.MeasuredAtUtc }).IsUnique();
+        });
+
+        modelBuilder.Entity<Meal>(entity =>
+        {
+            entity.HasKey(meal => meal.Id);
+            entity.Property(meal => meal.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(meal => meal.LocalDate).HasMaxLength(10).IsRequired();
+            entity.Property(meal => meal.TimeZoneId).HasMaxLength(80).IsRequired();
+            entity.Property(meal => meal.Name).HasMaxLength(160).IsRequired();
+            entity.Property(meal => meal.MealType).HasMaxLength(40).IsRequired();
+            entity.Property(meal => meal.ProteinGrams).HasPrecision(7, 2);
+            entity.Property(meal => meal.CarbohydrateGrams).HasPrecision(7, 2);
+            entity.Property(meal => meal.FatGrams).HasPrecision(7, 2);
+            entity.Property(meal => meal.Notes).HasMaxLength(1000);
+            entity.HasIndex(meal => new { meal.UserId, meal.LocalDate });
+            entity.HasIndex(meal => new { meal.UserId, meal.IsFavorite });
         });
     }
 }

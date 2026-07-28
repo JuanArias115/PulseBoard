@@ -110,6 +110,36 @@ public sealed class ApiSmokeTests
     }
 
     [Fact]
+    public async Task Meal_Can_Be_Created_And_Summarized()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+
+        var mealResponse = await client.PostAsJsonAsync("/api/v1/meals", new
+        {
+            localDate = "2026-07-28",
+            eatenAt = DateTimeOffset.Parse("2026-07-28T12:30:00+02:00"),
+            name = "Pollo con arroz",
+            mealType = "lunch",
+            caloriesKcal = 720,
+            proteinGrams = 48,
+            carbohydrateGrams = 82,
+            fatGrams = 18,
+            hasVegetables = true,
+            isFavorite = true,
+            notes = ""
+        });
+
+        var summaryResponse = await client.GetAsync("/api/v1/nutrition-summary?localDate=2026-07-28");
+        var summary = await summaryResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.Created, mealResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);
+        Assert.Equal(720, summary.GetProperty("today").GetProperty("caloriesKcal").GetDecimal());
+        Assert.Equal(48, summary.GetProperty("today").GetProperty("proteinGrams").GetDecimal());
+    }
+
+    [Fact]
     public async Task AppleHealthBridge_Requires_Key()
     {
         using var application = CreateApplication();
