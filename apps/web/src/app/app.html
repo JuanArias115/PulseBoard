@@ -157,6 +157,68 @@
     </article>
   </section>
 
+  <section class="analysis-grid">
+    <article class="panel analysis-panel">
+      <div class="panel-heading">
+        <span><svg lucideShieldCheck size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('analysis') }}</p>
+          <strong>{{ t('readiness') }}</strong>
+        </div>
+      </div>
+
+      <div class="component-list">
+        @for (component of analysisComponents(); track component.key) {
+          <article [attr.data-status]="component.status">
+            <div>
+              <strong>{{ analysisComponentLabel(component) }}</strong>
+              <p>{{ analysisComponentSummary(component) }}</p>
+            </div>
+            <span>{{ component.score === null || component.score === undefined ? '-' : component.score }}</span>
+          </article>
+        } @empty {
+          <p class="empty-state">{{ t('dataQuality') }}</p>
+        }
+      </div>
+    </article>
+
+    <article class="panel analysis-panel">
+      <div class="panel-heading">
+        <span><svg lucideDatabase size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('integrity') }}</p>
+          <strong>{{ formatNumber(analysisSummary()?.completeness?.score, ' %') }}</strong>
+        </div>
+      </div>
+
+      <div class="data-signal">
+        <p>{{ completenessSummary(analysisSummary()?.completeness) }}</p>
+        <p>{{ bodyDataSummary(analysisSummary()?.bodyData) }}</p>
+      </div>
+    </article>
+
+    <article class="panel rules-panel">
+      <div class="panel-heading">
+        <span><svg lucideActivity size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('analysis') }}</p>
+          <strong>{{ t('insight') }}</strong>
+        </div>
+      </div>
+
+      <div class="rule-list">
+        @for (observation of analysisObservations(); track observation.category + observation.rule) {
+          <p [attr.data-severity]="observation.severity">
+            {{ analysisObservationMessage(observation) }}
+            <small>{{ observation.rule }}</small>
+          </p>
+        } @empty {
+          <p class="empty-state">{{ t('dataQuality') }}</p>
+        }
+      </div>
+    </article>
+  </section>
+
   @if (message()) {
     <p class="toast">{{ message() }}</p>
   }

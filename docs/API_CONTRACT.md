@@ -44,6 +44,56 @@ up
 
 La composicion corporal se interpreta como tendencia, no como veredicto exacto de grasa o musculo perdido.
 
+## GET /analysis
+
+```text
+GET /api/v1/analysis
+```
+
+Devuelve el motor de analisis transparente de PulseBoard:
+
+- actividad: inicialmente `insufficient`, hasta tener Strava o actividades manuales;
+- recuperacion: score basado en check-ins, sueno, energia, fatiga y estres;
+- alimentacion: score basado en dias registrados, proteina registrada y comidas con verduras;
+- constancia: score basado en check-ins y cumplimiento de habitos;
+- composicion corporal: tendencia separada, sin score diario;
+- integridad de datos: areas presentes y areas faltantes;
+- observaciones en espanol e ingles, cada una con la regla que la genero.
+
+Ejemplo parcial:
+
+```json
+{
+  "components": [
+    {
+      "key": "recovery",
+      "score": 72,
+      "status": "steady",
+      "summaryEs": "Promedio reciente: 7.5 h de sueno, energia 4/5.",
+      "evidence": ["checkIns:4", "sleepAverageHours:7.5"]
+    }
+  ],
+  "bodyData": {
+    "trend": "stable",
+    "summaryEs": "Tendencia de peso a 30 dias: estable.",
+    "dataPoints": 12
+  },
+  "completeness": {
+    "score": 80,
+    "presentDomains": ["check-in", "habits", "nutrition", "body"],
+    "missingDomains": ["activity"]
+  },
+  "observations": [
+    {
+      "category": "data",
+      "severity": "info",
+      "messageEs": "Faltan datos en: activity.",
+      "rule": "dataCompleteness<100"
+    }
+  ]
+}
+```
+
 ## POST /check-ins
 
 ```json

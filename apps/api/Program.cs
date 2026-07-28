@@ -197,6 +197,65 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
         Insights: BuildNutritionInsights(localToday.ToString("O"), insights, meals)));
 });
 
+api.MapGet("/analysis", async (PulseBoardDbContext db, IConfiguration configuration) =>
+{
+    var options = configuration.GetSection(PulseBoardOptions.SectionName).Get<PulseBoardOptions>()
+        ?? new PulseBoardOptions();
+    var nowUtc = DateTimeOffset.UtcNow;
+    var localToday = GetLocalDate(nowUtc, options.TimeZoneId);
+    var recentDates7 = Enumerable.Range(0, 7)
+        .Select(offset => localToday.AddDays(-offset).ToString("O"))
+        .ToArray();
+    var recentDates14 = Enumerable.Range(0, 14)
+        .Select(offset => localToday.AddDays(-offset).ToString("O"))
+        .ToArray();
+
+    var checkIns = await db.CheckIns
+        .Where(checkIn => recentDates14.Contains(checkIn.LocalDate))
+        .OrderByDescending(checkIn => checkIn.LocalDate)
+        .ToListAsync();
+
+    var habits = await db.Habits
+        .Where(habit => habit.IsActive)
+        .OrderBy(habit => habit.Name)
+        .ToListAsync();
+
+    var completions = await db.HabitCompletions
+        .Where(completion => recentDates7.Contains(completion.LocalDate))
+        .ToListAsync();
+
+    var meals = await db.Meals
+        .Where(meal => recentDates7.Contains(meal.LocalDate))
+        .OrderByDescending(meal => meal.EatenAtUtc)
+        .ToListAsync();
+
+    var measurements = await db.BodyMeasurements
+        .Where(measurement => measurement.MeasuredAtUtc >= nowUtc.AddDays(-90))
+        .OrderByDescending(measurement => measurement.MeasuredAtUtc)
+        .Take(120)
+        .ToListAsync();
+
+    var bodyTrends = new[]
+    {
+        BuildTrend("weight", "Peso", "Weight", "kg", measurements, measurement => measurement.WeightKg, nowUtc),
+        BuildTrend("bodyFat", "Grasa", "Body fat", "%", measurements, measurement => measurement.BodyFatPercentage, nowUtc),
+        BuildTrend("muscle", "Musculo", "Muscle", "%", measurements, measurement => measurement.MusclePercentage, nowUtc),
+        BuildTrend("water", "Agua", "Water", "%", measurements, measurement => measurement.BodyWaterPercentage, nowUtc)
+    };
+
+    return Results.Ok(BuildAnalysisSummary(
+        nowUtc,
+        localToday.ToString("O"),
+        options.TimeZoneId,
+        recentDates7,
+        checkIns,
+        habits,
+        completions,
+        meals,
+        measurements,
+        bodyTrends));
+});
+
 api.MapGet("/check-ins", async (PulseBoardDbContext db, int limit = 14) =>
 {
     var safeLimit = Math.Clamp(limit, 1, 90);
@@ -719,6 +778,365 @@ static Insight[] BuildNutritionInsights(string localDate, Insight[] currentInsig
     return insights.Take(5).ToArray();
 }
 
+static AnalysisResponse BuildAnalysisSummary(
+    DateTimeOffset generatedAtUtc,
+    string localDate,
+    string timeZoneId,
+    string[] recentDates7,
+    IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
+    IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
+    IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements,
+    TrendMetric[] bodyTrends)
+{
+    var recovery = BuildRecoveryComponent(checkIns);
+    var nutrition = BuildNutritionComponent(meals);
+    var consistency = BuildConsistencyComponent(recentDates7, habits, completions, checkIns);
+    var activity = new AnalysisComponent(
+        Key: "activity",
+        LabelEs: "Actividad",
+        LabelEn: "Activity",
+        Score: null,
+        Status: "insufficient",
+        SummaryEs: "La actividad aun no esta conectada. Esta area quedara completa con actividades manuales o Strava.",
+        SummaryEn: "Activity is not connected yet. This area will be complete with manual activities or Strava.",
+        Evidence: []);
+
+    var bodyData = BuildBodyDataSignal(measurements, bodyTrends);
+    var completeness = BuildDataCompleteness(checkIns, habits, completions, meals, measurements);
+    var observations = BuildAnalysisObservations(
+        checkIns,
+        habits,
+        completions,
+        meals,
+        bodyData,
+        completeness);
+
+    return new AnalysisResponse(
+        GeneratedAtUtc: generatedAtUtc,
+        LocalDate: localDate,
+        TimeZoneId: timeZoneId,
+        Components: [activity, recovery, nutrition, consistency],
+        BodyData: bodyData,
+        Completeness: completeness,
+        Observations: observations);
+}
+
+static AnalysisComponent BuildRecoveryComponent(IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns)
+{
+    var recent = checkIns.Take(7).ToArray();
+    if (recent.Length == 0)
+    {
+        return new AnalysisComponent(
+            "recovery",
+            "Recuperacion",
+            "Recovery",
+            null,
+            "insufficient",
+            "Faltan check-ins para evaluar recuperacion.",
+            "Check-ins are needed to evaluate recovery.",
+            []);
+    }
+
+    var averageSleep = recent.Average(checkIn => checkIn.SleepHours);
+    var averageEnergy = recent.Average(checkIn => (decimal)checkIn.Energy);
+    var sleepScore = Math.Clamp(averageSleep / 8m * 100m, 0m, 100m);
+    var subjectiveScore = recent.Average(checkIn =>
+        (checkIn.SleepQuality + checkIn.Energy + checkIn.Mood + checkIn.Recovery + (6 - checkIn.Fatigue) + (6 - checkIn.Stress)) / 6m * 20m);
+    var score = (int)Math.Round(sleepScore * 0.35m + subjectiveScore * 0.65m, 0);
+
+    return new AnalysisComponent(
+        "recovery",
+        "Recuperacion",
+        "Recovery",
+        score,
+        ScoreStatus(score),
+        $"Promedio reciente: {Round(averageSleep)} h de sueno, energia {Round(averageEnergy)}/5.",
+        $"Recent average: {Round(averageSleep)} h of sleep, energy {Round(averageEnergy)}/5.",
+        [
+            $"checkIns:{recent.Length}",
+            $"sleepAverageHours:{Round(averageSleep)}",
+            $"energyAverage:{Round(averageEnergy)}"
+        ]);
+}
+
+static AnalysisComponent BuildNutritionComponent(IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals)
+{
+    if (meals.Count == 0)
+    {
+        return new AnalysisComponent(
+            "nutrition",
+            "Alimentacion",
+            "Nutrition",
+            null,
+            "insufficient",
+            "Faltan comidas registradas para analizar alimentacion.",
+            "Logged meals are needed to analyze nutrition.",
+            []);
+    }
+
+    var loggedDays = meals.Select(meal => meal.LocalDate).Distinct().Count();
+    var proteinAverage = meals.Sum(meal => meal.ProteinGrams) / loggedDays;
+    var vegetableDays = meals
+        .Where(meal => meal.HasVegetables)
+        .Select(meal => meal.LocalDate)
+        .Distinct()
+        .Count();
+    var loggingScore = Math.Clamp(loggedDays / 7m * 100m, 0m, 100m);
+    var proteinSignal = Math.Clamp(proteinAverage / 100m * 100m, 0m, 100m);
+    var vegetableSignal = Math.Clamp(vegetableDays / 7m * 100m, 0m, 100m);
+    var score = (int)Math.Round(loggingScore * 0.45m + proteinSignal * 0.35m + vegetableSignal * 0.2m, 0);
+
+    return new AnalysisComponent(
+        "nutrition",
+        "Alimentacion",
+        "Nutrition",
+        score,
+        ScoreStatus(score),
+        $"Hay comidas en {loggedDays}/7 dias. Proteina media registrada: {Round(proteinAverage)} g/dia.",
+        $"Meals are logged on {loggedDays}/7 days. Logged protein average: {Round(proteinAverage)} g/day.",
+        [
+            $"loggedDays7:{loggedDays}",
+            $"proteinAverageGrams:{Round(proteinAverage)}",
+            $"vegetableDays7:{vegetableDays}"
+        ]);
+}
+
+static AnalysisComponent BuildConsistencyComponent(
+    string[] recentDates7,
+    IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
+    IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
+    IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns)
+{
+    var checkInDays = checkIns
+        .Where(checkIn => recentDates7.Contains(checkIn.LocalDate))
+        .Select(checkIn => checkIn.LocalDate)
+        .Distinct()
+        .Count();
+    var expectedHabitCompletions = habits.Count * recentDates7.Length;
+    var habitRate = expectedHabitCompletions == 0
+        ? (decimal?)null
+        : Math.Clamp((decimal)completions.Count / expectedHabitCompletions * 100m, 0m, 100m);
+
+    if (habitRate is null && checkInDays == 0)
+    {
+        return new AnalysisComponent(
+            "consistency",
+            "Constancia",
+            "Consistency",
+            null,
+            "insufficient",
+            "Faltan habitos o check-ins recientes para medir constancia.",
+            "Recent habits or check-ins are needed to measure consistency.",
+            []);
+    }
+
+    var checkInRate = checkInDays / 7m * 100m;
+    var score = habitRate is null
+        ? (int)Math.Round(checkInRate, 0)
+        : (int)Math.Round(habitRate.Value * 0.65m + checkInRate * 0.35m, 0);
+
+    return new AnalysisComponent(
+        "consistency",
+        "Constancia",
+        "Consistency",
+        score,
+        ScoreStatus(score),
+        $"Check-ins en {checkInDays}/7 dias. Cumplimiento de habitos: {Round(habitRate ?? 0)}%.",
+        $"Check-ins on {checkInDays}/7 days. Habit completion: {Round(habitRate ?? 0)}%.",
+        [
+            $"checkInDays7:{checkInDays}",
+            $"habitCompletionRate7:{Round(habitRate ?? 0)}"
+        ]);
+}
+
+static BodyDataSignal BuildBodyDataSignal(
+    IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements,
+    IReadOnlyList<TrendMetric> bodyTrends)
+{
+    var weightTrend = bodyTrends.FirstOrDefault(trend => trend.Key == "weight");
+    var trendCode = weightTrend?.Trend ?? "insufficient";
+    var summaryEs = trendCode == "insufficient"
+        ? "Aun faltan mediciones para una tendencia corporal confiable."
+        : $"Tendencia de peso a 30 dias: {weightTrend!.TrendEs.ToLowerInvariant()}.";
+    var summaryEn = trendCode == "insufficient"
+        ? "More measurements are needed for a reliable body trend."
+        : $"30 day weight trend: {weightTrend!.TrendEn.ToLowerInvariant()}.";
+
+    return new BodyDataSignal(
+        Trend: trendCode,
+        SummaryEs: summaryEs,
+        SummaryEn: summaryEn,
+        DataPoints: measurements.Count,
+        Trends: bodyTrends.ToArray());
+}
+
+static DataCompleteness BuildDataCompleteness(
+    IReadOnlyCollection<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
+    IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
+    IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements)
+{
+    var present = new List<string>();
+    var missing = new List<string>();
+
+    AddCompletenessSignal(checkIns.Count > 0, "check-in", present, missing);
+    AddCompletenessSignal(habits.Count > 0 && completions.Count > 0, "habits", present, missing);
+    AddCompletenessSignal(meals.Count > 0, "nutrition", present, missing);
+    AddCompletenessSignal(measurements.Count >= 3, "body", present, missing);
+    AddCompletenessSignal(false, "activity", present, missing);
+
+    var score = (int)Math.Round(present.Count / 5m * 100m, 0);
+
+    return new DataCompleteness(
+        Score: score,
+        PresentDomains: present.ToArray(),
+        MissingDomains: missing.ToArray(),
+        SummaryEs: $"Datos disponibles en {present.Count}/5 areas.",
+        SummaryEn: $"Data is available in {present.Count}/5 areas.");
+}
+
+static void AddCompletenessSignal(bool hasData, string key, ICollection<string> present, ICollection<string> missing)
+{
+    if (hasData)
+    {
+        present.Add(key);
+        return;
+    }
+
+    missing.Add(key);
+}
+
+static AnalysisObservation[] BuildAnalysisObservations(
+    IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
+    IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
+    IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    BodyDataSignal bodyData,
+    DataCompleteness completeness)
+{
+    var observations = new List<AnalysisObservation>();
+    var recentCheckIns = checkIns.Take(7).ToArray();
+
+    if (recentCheckIns.Length >= 3)
+    {
+        var averageSleep = recentCheckIns.Average(checkIn => checkIn.SleepHours);
+        var averageEnergy = recentCheckIns.Average(checkIn => (decimal)checkIn.Energy);
+        if (averageSleep < 7 && averageEnergy <= 3)
+        {
+            observations.Add(new AnalysisObservation(
+                "recovery",
+                "warning",
+                "El sueno medio reciente esta por debajo de 7 horas y la energia registrada no esta alta.",
+                "Recent average sleep is below 7 hours and logged energy is not high.",
+                "sleepAverageHours<7 && energyAverage<=3"));
+        }
+    }
+
+    if (habits.Count > 0)
+    {
+        var completionRate = Math.Round((decimal)completions.Count / (habits.Count * 7) * 100m, 0);
+        if (completionRate >= 80)
+        {
+            observations.Add(new AnalysisObservation(
+                "habits",
+                "positive",
+                "La constancia semanal de habitos esta alta.",
+                "Weekly habit consistency is high.",
+                "habitCompletionRate7>=80"));
+        }
+        else if (completionRate > 0)
+        {
+            observations.Add(new AnalysisObservation(
+                "habits",
+                "info",
+                "Hay margen para subir la constancia semanal de habitos.",
+                "There is room to improve weekly habit consistency.",
+                "0<habitCompletionRate7<80"));
+        }
+    }
+
+    if (meals.Count == 0)
+    {
+        observations.Add(new AnalysisObservation(
+            "nutrition",
+            "info",
+            "Aun faltan comidas para relacionar alimentacion con energia y recuperacion.",
+            "More meals are needed before nutrition can be related to energy and recovery.",
+            "meals7==0"));
+    }
+    else
+    {
+        var loggedDays = meals.Select(meal => meal.LocalDate).Distinct().Count();
+        var proteinAverage = meals.Sum(meal => meal.ProteinGrams) / loggedDays;
+        if (proteinAverage >= 100)
+        {
+            observations.Add(new AnalysisObservation(
+                "nutrition",
+                "positive",
+                "La proteina media registrada ya es alta.",
+                "Logged average protein is already high.",
+                "proteinAverageGrams>=100"));
+        }
+
+        if (meals.All(meal => !meal.HasVegetables))
+        {
+            observations.Add(new AnalysisObservation(
+                "nutrition",
+                "info",
+                "No hay comidas recientes marcadas con verduras.",
+                "No recent meals are marked with vegetables.",
+                "vegetableMeals7==0"));
+        }
+    }
+
+    observations.Add(new AnalysisObservation(
+        "body",
+        "info",
+        bodyData.SummaryEs,
+        bodyData.SummaryEn,
+        "bodyTrend30d"));
+
+    if (completeness.MissingDomains.Length > 0)
+    {
+        observations.Add(new AnalysisObservation(
+            "data",
+            "info",
+            $"Faltan datos en: {string.Join(", ", completeness.MissingDomains)}.",
+            $"Missing data in: {string.Join(", ", completeness.MissingDomains)}.",
+            "dataCompleteness<100"));
+    }
+
+    if (observations.Count == 0)
+    {
+        observations.Add(new AnalysisObservation(
+            "data",
+            "info",
+            "Aun se estan acumulando datos para generar observaciones mas utiles.",
+            "Data is still being accumulated for more useful observations.",
+            "fallback"));
+    }
+
+    return observations.Take(6).ToArray();
+}
+
+static string ScoreStatus(int score)
+{
+    if (score >= 80)
+    {
+        return "strong";
+    }
+
+    if (score >= 55)
+    {
+        return "steady";
+    }
+
+    return "needs-data";
+}
+
 static DateOnly GetLocalDate(DateTimeOffset utcDateTime, string timeZoneId)
 {
     TimeZoneInfo timeZone;
@@ -872,5 +1290,45 @@ public sealed record Insight(
     string Severity,
     string MessageEs,
     string MessageEn);
+
+public sealed record AnalysisResponse(
+    DateTimeOffset GeneratedAtUtc,
+    string LocalDate,
+    string TimeZoneId,
+    AnalysisComponent[] Components,
+    BodyDataSignal BodyData,
+    DataCompleteness Completeness,
+    AnalysisObservation[] Observations);
+
+public sealed record AnalysisComponent(
+    string Key,
+    string LabelEs,
+    string LabelEn,
+    int? Score,
+    string Status,
+    string SummaryEs,
+    string SummaryEn,
+    string[] Evidence);
+
+public sealed record BodyDataSignal(
+    string Trend,
+    string SummaryEs,
+    string SummaryEn,
+    int DataPoints,
+    TrendMetric[] Trends);
+
+public sealed record DataCompleteness(
+    int Score,
+    string[] PresentDomains,
+    string[] MissingDomains,
+    string SummaryEs,
+    string SummaryEn);
+
+public sealed record AnalysisObservation(
+    string Category,
+    string Severity,
+    string MessageEs,
+    string MessageEn,
+    string Rule);
 
 public sealed record MeasurementPoint(DateTimeOffset MeasuredAtUtc, decimal? Value);

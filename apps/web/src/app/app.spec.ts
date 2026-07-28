@@ -82,6 +82,46 @@ describe('App', () => {
         },
       ],
     });
+    http.expectOne('/api/v1/analysis').flush({
+      generatedAtUtc: '2026-07-28T11:00:00Z',
+      localDate: '2026-07-28',
+      timeZoneId: 'Europe/Vienna',
+      components: [
+        {
+          key: 'recovery',
+          labelEs: 'Recuperacion',
+          labelEn: 'Recovery',
+          score: 72,
+          status: 'steady',
+          summaryEs: 'Promedio reciente: 7.5 h de sueno.',
+          summaryEn: 'Recent average: 7.5 h of sleep.',
+          evidence: ['checkIns:1'],
+        },
+      ],
+      bodyData: {
+        trend: 'insufficient',
+        summaryEs: 'Aun faltan mediciones.',
+        summaryEn: 'More measurements are needed.',
+        dataPoints: 0,
+        trends: [],
+      },
+      completeness: {
+        score: 40,
+        presentDomains: ['check-in', 'nutrition'],
+        missingDomains: ['activity'],
+        summaryEs: 'Datos disponibles en 2/5 areas.',
+        summaryEn: 'Data is available in 2/5 areas.',
+      },
+      observations: [
+        {
+          category: 'data',
+          severity: 'info',
+          messageEs: 'Faltan datos en: activity.',
+          messageEn: 'Missing data in: activity.',
+          rule: 'dataCompleteness<100',
+        },
+      ],
+    });
     http.expectOne('/api/v1/habits').flush([]);
     http.expectOne((request) => request.url.startsWith('/api/v1/habit-completions')).flush([]);
     http.expectOne('/api/v1/check-ins?limit=7').flush([]);

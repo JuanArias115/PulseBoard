@@ -140,6 +140,73 @@ public sealed class ApiSmokeTests
     }
 
     [Fact]
+    public async Task Analysis_Returns_Component_Scores_And_Transparent_Rules()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+        var today = GetViennaDate();
+
+        await client.PostAsJsonAsync("/api/v1/check-ins", new
+        {
+            localDate = today,
+            sleepHours = 6.5m,
+            sleepQuality = 3,
+            energy = 3,
+            mood = 4,
+            fatigue = 3,
+            muscleSoreness = 2,
+            hunger = 3,
+            stress = 3,
+            recovery = 3,
+            note = ""
+        });
+
+        var habitResponse = await client.PostAsJsonAsync("/api/v1/habits", new
+        {
+            name = "Creatina",
+            category = "supplement",
+            frequency = "daily",
+            targetAmount = 5,
+            unit = "g",
+            notes = ""
+        });
+        var habit = await habitResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        await client.PostAsJsonAsync($"/api/v1/habits/{habit.GetProperty("id").GetGuid()}/completions", new
+        {
+            localDate = today,
+            amount = 5,
+            notes = ""
+        });
+
+        await client.PostAsJsonAsync("/api/v1/meals", new
+        {
+            localDate = today,
+            eatenAt = DateTimeOffset.UtcNow,
+            name = "Pollo con arroz",
+            mealType = "lunch",
+            caloriesKcal = 720,
+            proteinGrams = 48,
+            carbohydrateGrams = 82,
+            fatGrams = 18,
+            hasVegetables = true,
+            isFavorite = false,
+            notes = ""
+        });
+
+        var response = await client.GetAsync("/api/v1/analysis");
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Europe/Vienna", body.GetProperty("timeZoneId").GetString());
+        Assert.True(body.GetProperty("components").GetArrayLength() >= 4);
+        Assert.Contains(body.GetProperty("components").EnumerateArray(), component => component.GetProperty("key").GetString() == "recovery");
+        Assert.Contains(body.GetProperty("completeness").GetProperty("missingDomains").EnumerateArray(), domain => domain.GetString() == "activity");
+        Assert.True(body.GetProperty("observations").EnumerateArray().All(observation => observation.TryGetProperty("rule", out _)));
+        Assert.False(body.GetProperty("bodyData").TryGetProperty("score", out _));
+    }
+
+    [Fact]
     public async Task AppleHealthBridge_Requires_Key()
     {
         using var application = CreateApplication();
@@ -233,4 +300,11 @@ public sealed class ApiSmokeTests
         string Units,
         string[] Modules);
 
+    private static string GetViennaDate()
+    {
+        var timeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Vienna");
+        return DateOnly
+            .FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timeZone).DateTime)
+            .ToString("O");
+    }
 }

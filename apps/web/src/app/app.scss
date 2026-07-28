@@ -8,6 +8,7 @@
 .topbar,
 .summary-strip,
 .dashboard-grid,
+.analysis-grid,
 .workspace-grid,
 .history-grid,
 .toast {
@@ -189,6 +190,14 @@
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1.25fr 0.85fr 0.9fr 0.85fr;
+  gap: 16px;
+  align-items: stretch;
+  margin-bottom: 16px;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.75fr 1fr;
   gap: 16px;
   align-items: stretch;
   margin-bottom: 16px;
@@ -514,6 +523,100 @@ input[type='range'] {
   }
 }
 
+.component-list,
+.rule-list {
+  display: grid;
+  gap: 10px;
+}
+
+.component-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  gap: 12px;
+  align-items: center;
+  min-height: 86px;
+  padding: 12px;
+  border-left: 4px solid #8e8e93;
+  border-radius: 8px;
+  background: #f5f5f7;
+
+  strong,
+  p {
+    margin: 0;
+  }
+
+  p {
+    margin-top: 5px;
+    color: #6e6e73;
+    font-size: 0.84rem;
+    line-height: 1.35;
+  }
+
+  span {
+    display: inline-grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    color: #1d1d1f;
+    background: #ffffff;
+    font-size: 1rem;
+    font-weight: 900;
+  }
+}
+
+.component-list article[data-status='strong'] {
+  border-left-color: #34c759;
+}
+
+.component-list article[data-status='steady'] {
+  border-left-color: #007aff;
+}
+
+.component-list article[data-status='needs-data'] {
+  border-left-color: #ff9f0a;
+}
+
+.data-signal {
+  display: grid;
+  gap: 10px;
+
+  p {
+    margin: 0;
+    padding: 12px;
+    border-radius: 8px;
+    color: #1d1d1f;
+    background: #f5f5f7;
+    line-height: 1.45;
+  }
+}
+
+.rule-list p {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  color: #1d1d1f;
+  background: #f5f5f7;
+  font-size: 0.9rem;
+  line-height: 1.45;
+
+  small {
+    display: block;
+    margin-top: 7px;
+    color: #6e6e73;
+    font-size: 0.72rem;
+    font-weight: 800;
+  }
+}
+
+.rule-list p[data-severity='positive'] {
+  background: #effdf3;
+}
+
+.rule-list p[data-severity='warning'] {
+  background: #fff7e6;
+}
+
 .check-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -613,6 +716,7 @@ input[type='range'] {
 @media (max-width: 1040px) {
   .workspace-grid,
   .dashboard-grid,
+  .analysis-grid,
   .summary-strip,
   .nutrition-totals,
   .metric-list {
@@ -637,6 +741,7 @@ input[type='range'] {
 
   .workspace-grid,
   .dashboard-grid,
+  .analysis-grid,
   .summary-strip,
   .form-grid.two,
   .scale-grid,

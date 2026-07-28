@@ -106,6 +106,51 @@ interface DashboardSummary {
   insights: Insight[];
 }
 
+interface AnalysisSummary {
+  generatedAtUtc: string;
+  localDate: string;
+  timeZoneId: string;
+  components: AnalysisComponent[];
+  bodyData: BodyDataSignal;
+  completeness: DataCompleteness;
+  observations: AnalysisObservation[];
+}
+
+interface AnalysisComponent {
+  key: string;
+  labelEs: string;
+  labelEn: string;
+  score: number | null;
+  status: string;
+  summaryEs: string;
+  summaryEn: string;
+  evidence: string[];
+}
+
+interface BodyDataSignal {
+  trend: string;
+  summaryEs: string;
+  summaryEn: string;
+  dataPoints: number;
+  trends: TrendMetric[];
+}
+
+interface DataCompleteness {
+  score: number;
+  presentDomains: string[];
+  missingDomains: string[];
+  summaryEs: string;
+  summaryEn: string;
+}
+
+interface AnalysisObservation {
+  category: string;
+  severity: string;
+  messageEs: string;
+  messageEn: string;
+  rule: string;
+}
+
 interface NutritionSummary {
   today: NutritionTotals;
   average7Days: NutritionTotals;
@@ -158,6 +203,7 @@ const translations = {
     average14: 'Prom. 14 dias',
     average30: 'Prom. 30 dias',
     average7: 'Prom. 7 dias',
+    analysis: 'Analisis',
     apiOffline: 'API sin conexion',
     apiOnline: 'API conectada',
     body: 'Composicion',
@@ -181,6 +227,7 @@ const translations = {
     hunger: 'Hambre',
     language: 'Idioma',
     insight: 'Observaciones',
+    integrity: 'Integridad',
     latest: 'Actual',
     latestBody: 'Ultima medicion',
     lunch: 'Almuerzo',
@@ -220,6 +267,7 @@ const translations = {
     average14: '14 day avg',
     average30: '30 day avg',
     average7: '7 day avg',
+    analysis: 'Analysis',
     apiOffline: 'API offline',
     apiOnline: 'API connected',
     body: 'Body',
@@ -243,6 +291,7 @@ const translations = {
     hunger: 'Hunger',
     language: 'Language',
     insight: 'Insights',
+    integrity: 'Integrity',
     latest: 'Current',
     latestBody: 'Latest measurement',
     lunch: 'Lunch',
@@ -315,6 +364,7 @@ export class App {
   readonly measurements = signal<BodyMeasurement[]>([]);
   readonly meals = signal<Meal[]>([]);
   readonly dashboardSummary = signal<DashboardSummary | null>(null);
+  readonly analysisSummary = signal<AnalysisSummary | null>(null);
   readonly message = signal('');
 
   readonly completedHabitIds = computed(
@@ -353,6 +403,8 @@ export class App {
   readonly bodyTrends = computed(() => this.dashboardSummary()?.body.trends ?? []);
   readonly insights = computed(() => this.dashboardSummary()?.insights ?? []);
   readonly nutrition = computed(() => this.dashboardSummary()?.nutrition);
+  readonly analysisComponents = computed(() => this.analysisSummary()?.components ?? []);
+  readonly analysisObservations = computed(() => this.analysisSummary()?.observations ?? []);
 
   readonly weightChart = computed(() => {
     const points = this.dashboardSummary()?.body.history ?? [];
@@ -441,6 +493,7 @@ export class App {
     forkJoin({
       meta: this.http.get<ApiMeta>('/api/v1/meta'),
       dashboard: this.http.get<DashboardSummary>('/api/v1/dashboard'),
+      analysis: this.http.get<AnalysisSummary>('/api/v1/analysis'),
       habits: this.http.get<Habit[]>('/api/v1/habits'),
       completions: this.http.get<HabitCompletion[]>(
         `/api/v1/habit-completions?localDate=${this.checkInForm.localDate}`,
@@ -449,9 +502,10 @@ export class App {
       measurements: this.http.get<BodyMeasurement[]>('/api/v1/body-measurements?limit=7'),
       meals: this.http.get<Meal[]>(`/api/v1/meals?localDate=${this.mealForm.localDate}`),
     }).subscribe({
-      next: ({ meta, dashboard, habits, completions, checkIns, measurements, meals }) => {
+      next: ({ meta, dashboard, analysis, habits, completions, checkIns, measurements, meals }) => {
         this.meta.set(meta);
         this.dashboardSummary.set(dashboard);
+        this.analysisSummary.set(analysis);
         this.habits.set(habits);
         this.completions.set(completions);
         this.checkIns.set(checkIns);
@@ -473,6 +527,34 @@ export class App {
 
   insightMessage(insight: Insight): string {
     return this.language() === 'es' ? insight.messageEs : insight.messageEn;
+  }
+
+  analysisComponentLabel(component: AnalysisComponent): string {
+    return this.language() === 'es' ? component.labelEs : component.labelEn;
+  }
+
+  analysisComponentSummary(component: AnalysisComponent): string {
+    return this.language() === 'es' ? component.summaryEs : component.summaryEn;
+  }
+
+  bodyDataSummary(bodyData?: BodyDataSignal): string {
+    if (!bodyData) {
+      return '-';
+    }
+
+    return this.language() === 'es' ? bodyData.summaryEs : bodyData.summaryEn;
+  }
+
+  completenessSummary(completeness?: DataCompleteness): string {
+    if (!completeness) {
+      return '-';
+    }
+
+    return this.language() === 'es' ? completeness.summaryEs : completeness.summaryEn;
+  }
+
+  analysisObservationMessage(observation: AnalysisObservation): string {
+    return this.language() === 'es' ? observation.messageEs : observation.messageEn;
   }
 
   saveCheckIn(): void {
