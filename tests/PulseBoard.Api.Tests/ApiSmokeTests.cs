@@ -246,6 +246,40 @@ public sealed class ApiSmokeTests
     }
 
     [Fact]
+    public async Task AppleHealthBridge_Accepts_Shortcuts_Text_Numbers()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+        var today = GetViennaDate();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/integrations/apple-health/daily-activity")
+        {
+            Content = JsonContent.Create(new Dictionary<string, object?>
+            {
+                ["localDate"] = today,
+                ["steps"] = "743 steps",
+                ["activeEnergyKcal"] = "120 kcal",
+                ["exerciseMinutes"] = "12 min",
+                ["walkingRunningDistanceKm"] = "0,8 km",
+                ["cyclingDistanceKm"] = "0",
+                ["workoutCount"] = "0",
+                ["notes"] = "Apple Health Shortcut"
+            })
+        };
+        request.Headers.Add("X-PulseBoard-Bridge-Key", "test-bridge-key");
+
+        var response = await client.SendAsync(request);
+        var summaryResponse = await client.GetAsync($"/api/v1/activity-summary?localDate={today}");
+        var summary = await summaryResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(743, summary.GetProperty("today").GetProperty("steps").GetDecimal());
+        Assert.Equal(120, summary.GetProperty("today").GetProperty("activeEnergyKcal").GetDecimal());
+        Assert.Equal(12, summary.GetProperty("today").GetProperty("exerciseMinutes").GetDecimal());
+        Assert.Equal(0.8m, summary.GetProperty("today").GetProperty("walkingRunningDistanceKm").GetDecimal());
+    }
+
+    [Fact]
     public async Task AppleHealthBridge_Requires_Key()
     {
         using var application = CreateApplication();

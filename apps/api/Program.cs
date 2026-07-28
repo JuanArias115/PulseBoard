@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using PulseBoard.Api;
@@ -571,9 +574,10 @@ api.MapPost("/integrations/apple-health/body-measurements", async (
 });
 
 api.MapPost("/integrations/apple-health/daily-activity", async (
-    CreateAppleHealthDailyActivityRequest request,
+    JsonElement payload,
     HttpRequest httpRequest,
     IConfiguration configuration,
+    ILogger<Program> logger,
     PulseBoardDbContext db) =>
 {
     var bridgeKey = configuration.GetValue<string>("PULSEBOARD_APPLE_HEALTH_BRIDGE_KEY");
@@ -589,11 +593,20 @@ api.MapPost("/integrations/apple-health/daily-activity", async (
         return Results.Unauthorized();
     }
 
-    var activityRequest = request.ToDailyActivityRequest();
-    var errors = activityRequest.Validate();
+    logger.LogWarning("Temporary Apple Health daily activity payload: {Payload}", payload.GetRawText());
+
+    var parsed = TryBuildDailyActivityRequest(payload, out var activityRequest, out var errors);
     if (errors.Count > 0)
     {
         return Results.ValidationProblem(errors);
+    }
+
+    if (!parsed || activityRequest is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["payload"] = ["Could not parse Apple Health activity payload."]
+        });
     }
 
     var activity = await UpsertDailyActivityAsync(db, activityRequest.ToEntity("AppleHealth"));
@@ -1366,6 +1379,130 @@ static async Task<PulseBoard.Api.Models.DailyActivity> UpsertDailyActivityAsync(
     await db.SaveChangesAsync();
 
     return activity;
+}
+
+static bool TryBuildDailyActivityRequest(
+    JsonElement payload,
+    out CreateDailyActivityRequest? request,
+    out Dictionary<string, string[]> errors)
+{
+    request = null;
+    errors = new Dictionary<string, string[]>();
+
+    var localDate = ReadString(payload, "localDate", errors);
+    var steps = ReadInt(payload, "steps", errors);
+    var activeEnergyKcal = ReadInt(payload, "activeEnergyKcal", errors);
+    var exerciseMinutes = ReadInt(payload, "exerciseMinutes", errors);
+    var walkingRunningDistanceKm = ReadNullableDecimal(payload, "walkingRunningDistanceKm", errors) ?? 0;
+    var cyclingDistanceKm = ReadNullableDecimal(payload, "cyclingDistanceKm", errors) ?? 0;
+    var workoutCount = ReadInt(payload, "workoutCount", errors);
+    var notes = ReadOptionalString(payload, "notes");
+
+    if (errors.Count > 0)
+    {
+        return false;
+    }
+
+    request = new CreateDailyActivityRequest(
+        localDate!,
+        steps!.Value,
+        activeEnergyKcal!.Value,
+        exerciseMinutes!.Value,
+        walkingRunningDistanceKm,
+        cyclingDistanceKm,
+        workoutCount!.Value,
+        notes);
+
+    foreach (var error in request.Validate())
+    {
+        errors[error.Key] = error.Value;
+    }
+
+    return errors.Count == 0;
+}
+
+static string? ReadString(JsonElement payload, string propertyName, IDictionary<string, string[]> errors)
+{
+    if (!payload.TryGetProperty(propertyName, out var value))
+    {
+        errors[propertyName] = [$"{propertyName} is required."];
+        return null;
+    }
+
+    if (value.ValueKind == JsonValueKind.String)
+    {
+        var text = value.GetString()?.Trim();
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+    }
+
+    errors[propertyName] = [$"{propertyName} must be text."];
+    return null;
+}
+
+static string? ReadOptionalString(JsonElement payload, string propertyName)
+{
+    if (!payload.TryGetProperty(propertyName, out var value))
+    {
+        return null;
+    }
+
+    return value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() : value.ToString();
+}
+
+static int? ReadInt(JsonElement payload, string propertyName, IDictionary<string, string[]> errors)
+{
+    var value = ReadDecimal(payload, propertyName, errors);
+    return value is null ? null : (int)Math.Round(value.Value, 0, MidpointRounding.AwayFromZero);
+}
+
+static decimal? ReadNullableDecimal(JsonElement payload, string propertyName, IDictionary<string, string[]> errors)
+{
+    if (!payload.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
+    {
+        return null;
+    }
+
+    return ConvertJsonElementToDecimal(value, propertyName, errors);
+}
+
+static decimal? ReadDecimal(JsonElement payload, string propertyName, IDictionary<string, string[]> errors)
+{
+    if (!payload.TryGetProperty(propertyName, out var value))
+    {
+        errors[propertyName] = [$"{propertyName} is required."];
+        return null;
+    }
+
+    return ConvertJsonElementToDecimal(value, propertyName, errors);
+}
+
+static decimal? ConvertJsonElementToDecimal(JsonElement value, string propertyName, IDictionary<string, string[]> errors)
+{
+    if (value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number))
+    {
+        return number;
+    }
+
+    if (value.ValueKind == JsonValueKind.String)
+    {
+        var text = value.GetString()?.Trim() ?? string.Empty;
+        var match = Regex.Match(text, @"-?\d+(?:[\.,]\d+)?");
+        if (match.Success
+            && decimal.TryParse(
+                match.Value.Replace(',', '.'),
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var parsed))
+        {
+            return parsed;
+        }
+    }
+
+    errors[propertyName] = [$"{propertyName} must be a number. Received: {value}"];
+    return null;
 }
 
 static DateOnly GetLocalDate(DateTimeOffset utcDateTime, string timeZoneId)
