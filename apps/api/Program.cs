@@ -108,7 +108,7 @@ api.MapGet("/meta", (IConfiguration configuration) =>
         supportedLanguages = GetSupportedLanguages(options),
         timeZoneId = options.TimeZoneId,
         units = "metric",
-        modules = new[] { "check-in", "habits", "body-measurements", "nutrition", "activity" }
+        modules = new[] { "check-in", "habits", "body-measurements", "nutrition", "activity", "recovery" }
     });
 });
 
@@ -141,9 +141,19 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
         .OrderByDescending(meal => meal.EatenAtUtc)
         .ToListAsync();
 
+    var dailyNutritions = await db.DailyNutritions
+        .Where(nutrition => recentDates.Contains(nutrition.LocalDate))
+        .OrderByDescending(nutrition => nutrition.LocalDate)
+        .ToListAsync();
+
     var dailyActivities = await db.DailyActivities
         .Where(activity => recentDates.Contains(activity.LocalDate))
         .OrderByDescending(activity => activity.LocalDate)
+        .ToListAsync();
+
+    var dailyRecoveries = await db.DailyRecoveries
+        .Where(recovery => recentDates.Contains(recovery.LocalDate))
+        .OrderByDescending(recovery => recovery.LocalDate)
         .ToListAsync();
 
     var measurements = await db.BodyMeasurements
@@ -188,7 +198,7 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
             CompletedToday: completionsToday,
             CompletionRate7Days: completionRate,
             StreakDays: BuildHabitStreak(recentDates, habits.Count, completions)),
-        Nutrition: BuildNutritionSummary(localToday.ToString("O"), meals),
+        Nutrition: BuildNutritionSummary(localToday.ToString("O"), meals, dailyNutritions),
         Activity: BuildActivitySummary(localToday.ToString("O"), dailyActivities),
         Body: new BodyDashboard(
             Latest: latestMeasurement,
@@ -203,7 +213,8 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
                     MusclePercentage: measurement.MusclePercentage,
                     BodyWaterPercentage: measurement.BodyWaterPercentage))
                 .ToArray()),
-        Insights: BuildNutritionInsights(localToday.ToString("O"), insights, meals)));
+        Recovery: BuildRecoverySummary(localToday.ToString("O"), dailyRecoveries),
+        Insights: BuildNutritionInsights(localToday.ToString("O"), insights, meals, dailyNutritions)));
 });
 
 api.MapGet("/analysis", async (PulseBoardDbContext db, IConfiguration configuration) =>
@@ -238,9 +249,19 @@ api.MapGet("/analysis", async (PulseBoardDbContext db, IConfiguration configurat
         .OrderByDescending(meal => meal.EatenAtUtc)
         .ToListAsync();
 
+    var dailyNutritions = await db.DailyNutritions
+        .Where(nutrition => recentDates7.Contains(nutrition.LocalDate))
+        .OrderByDescending(nutrition => nutrition.LocalDate)
+        .ToListAsync();
+
     var dailyActivities = await db.DailyActivities
         .Where(activity => recentDates7.Contains(activity.LocalDate))
         .OrderByDescending(activity => activity.LocalDate)
+        .ToListAsync();
+
+    var dailyRecoveries = await db.DailyRecoveries
+        .Where(recovery => recentDates7.Contains(recovery.LocalDate))
+        .OrderByDescending(recovery => recovery.LocalDate)
         .ToListAsync();
 
     var measurements = await db.BodyMeasurements
@@ -263,9 +284,11 @@ api.MapGet("/analysis", async (PulseBoardDbContext db, IConfiguration configurat
         options.TimeZoneId,
         recentDates7,
         checkIns,
+        dailyRecoveries,
         habits,
         completions,
         meals,
+        dailyNutritions,
         dailyActivities,
         measurements,
         bodyTrends));
@@ -467,7 +490,12 @@ api.MapGet("/nutrition-summary", async (PulseBoardDbContext db, IConfiguration c
         .OrderByDescending(meal => meal.EatenAtUtc)
         .ToListAsync();
 
-    return Results.Ok(BuildNutritionSummary(date, meals));
+    var dailyNutritions = await db.DailyNutritions
+        .Where(nutrition => recentDates.Contains(nutrition.LocalDate))
+        .OrderByDescending(nutrition => nutrition.LocalDate)
+        .ToListAsync();
+
+    return Results.Ok(BuildNutritionSummary(date, meals, dailyNutritions));
 });
 
 api.MapPost("/meals", async (CreateMealRequest request, PulseBoardDbContext db) =>
@@ -540,6 +568,58 @@ api.MapPost("/daily-activities", async (CreateDailyActivityRequest request, Puls
     return Results.Ok(activity);
 });
 
+api.MapGet("/daily-nutrition", async (PulseBoardDbContext db, int limit = 30) =>
+{
+    var safeLimit = Math.Clamp(limit, 1, 180);
+
+    var nutritions = await db.DailyNutritions
+        .OrderByDescending(nutrition => nutrition.LocalDate)
+        .ThenByDescending(nutrition => nutrition.RecordedAtUtc)
+        .Take(safeLimit)
+        .ToListAsync();
+
+    return Results.Ok(nutritions);
+});
+
+api.MapPost("/daily-nutrition", async (CreateDailyNutritionRequest request, PulseBoardDbContext db) =>
+{
+    var errors = request.Validate();
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var nutrition = await UpsertDailyNutritionAsync(db, request.ToEntity("Manual"));
+
+    return Results.Ok(nutrition);
+});
+
+api.MapGet("/daily-recovery", async (PulseBoardDbContext db, int limit = 30) =>
+{
+    var safeLimit = Math.Clamp(limit, 1, 180);
+
+    var recoveries = await db.DailyRecoveries
+        .OrderByDescending(recovery => recovery.LocalDate)
+        .ThenByDescending(recovery => recovery.RecordedAtUtc)
+        .Take(safeLimit)
+        .ToListAsync();
+
+    return Results.Ok(recoveries);
+});
+
+api.MapPost("/daily-recovery", async (CreateDailyRecoveryRequest request, PulseBoardDbContext db) =>
+{
+    var errors = request.Validate();
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var recovery = await UpsertDailyRecoveryAsync(db, request.ToEntity("Manual"));
+
+    return Results.Ok(recovery);
+});
+
 api.MapPost("/integrations/apple-health/body-measurements", async (
     CreateAppleHealthBodyMeasurementRequest request,
     HttpRequest httpRequest,
@@ -577,7 +657,6 @@ api.MapPost("/integrations/apple-health/daily-activity", async (
     JsonElement payload,
     HttpRequest httpRequest,
     IConfiguration configuration,
-    ILogger<Program> logger,
     PulseBoardDbContext db) =>
 {
     var bridgeKey = configuration.GetValue<string>("PULSEBOARD_APPLE_HEALTH_BRIDGE_KEY");
@@ -592,8 +671,6 @@ api.MapPost("/integrations/apple-health/daily-activity", async (
     {
         return Results.Unauthorized();
     }
-
-    logger.LogWarning("Temporary Apple Health daily activity payload: {Payload}", payload.GetRawText());
 
     var parsed = TryBuildDailyActivityRequest(payload, out var activityRequest, out var errors);
     if (errors.Count > 0)
@@ -612,6 +689,82 @@ api.MapPost("/integrations/apple-health/daily-activity", async (
     var activity = await UpsertDailyActivityAsync(db, activityRequest.ToEntity("AppleHealth"));
 
     return Results.Ok(activity);
+});
+
+api.MapPost("/integrations/apple-health/daily-nutrition", async (
+    JsonElement payload,
+    HttpRequest httpRequest,
+    IConfiguration configuration,
+    PulseBoardDbContext db) =>
+{
+    var bridgeKey = configuration.GetValue<string>("PULSEBOARD_APPLE_HEALTH_BRIDGE_KEY");
+    if (string.IsNullOrWhiteSpace(bridgeKey))
+    {
+        return Results.Problem("Apple Health bridge key is not configured.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    if (!httpRequest.Headers.TryGetValue("X-PulseBoard-Bridge-Key", out var providedKey)
+        || providedKey.Count != 1
+        || !string.Equals(providedKey[0], bridgeKey, StringComparison.Ordinal))
+    {
+        return Results.Unauthorized();
+    }
+
+    var parsed = TryBuildDailyNutritionRequest(payload, out var nutritionRequest, out var errors);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    if (!parsed || nutritionRequest is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["payload"] = ["Could not parse Apple Health nutrition payload."]
+        });
+    }
+
+    var nutrition = await UpsertDailyNutritionAsync(db, nutritionRequest.ToEntity("AppleHealth"));
+
+    return Results.Ok(nutrition);
+});
+
+api.MapPost("/integrations/apple-health/daily-recovery", async (
+    JsonElement payload,
+    HttpRequest httpRequest,
+    IConfiguration configuration,
+    PulseBoardDbContext db) =>
+{
+    var bridgeKey = configuration.GetValue<string>("PULSEBOARD_APPLE_HEALTH_BRIDGE_KEY");
+    if (string.IsNullOrWhiteSpace(bridgeKey))
+    {
+        return Results.Problem("Apple Health bridge key is not configured.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    if (!httpRequest.Headers.TryGetValue("X-PulseBoard-Bridge-Key", out var providedKey)
+        || providedKey.Count != 1
+        || !string.Equals(providedKey[0], bridgeKey, StringComparison.Ordinal))
+    {
+        return Results.Unauthorized();
+    }
+
+    var parsed = TryBuildDailyRecoveryRequest(payload, out var recoveryRequest, out var errors);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    if (!parsed || recoveryRequest is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["payload"] = ["Could not parse Apple Health recovery payload."]
+        });
+    }
+
+    var recovery = await UpsertDailyRecoveryAsync(db, recoveryRequest.ToEntity("AppleHealth"));
+
+    return Results.Ok(recovery);
 });
 
 if (app.Configuration.GetValue<bool>("PULSEBOARD_AUTO_MIGRATE"))
@@ -831,41 +984,61 @@ static Insight[] BuildInsights(
     return insights.Take(4).ToArray();
 }
 
-static NutritionSummary BuildNutritionSummary(string localDate, IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals)
+static NutritionSummary BuildNutritionSummary(
+    string localDate,
+    IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyNutrition> dailyNutritions)
 {
     var todayMeals = meals
         .Where(meal => meal.LocalDate == localDate)
         .ToArray();
+    var todayDailyNutritions = dailyNutritions
+        .Where(nutrition => nutrition.LocalDate == localDate)
+        .ToArray();
     var daysWithMeals = meals
         .Select(meal => meal.LocalDate)
+        .Concat(dailyNutritions.Select(nutrition => nutrition.LocalDate))
         .Distinct()
         .Count();
 
     return new NutritionSummary(
-        Today: BuildNutritionTotals(todayMeals),
+        Today: BuildNutritionTotals(todayMeals, todayDailyNutritions),
         Average7Days: daysWithMeals == 0
-            ? new NutritionTotals(0, 0, 0, 0, 0, 0)
+            ? new NutritionTotals(0, 0, 0, 0, 0, 0, 0, 0, 0)
             : new NutritionTotals(
                 Meals: Math.Round((decimal)meals.Count / daysWithMeals, 1),
-                CaloriesKcal: Math.Round((decimal)meals.Sum(meal => meal.CaloriesKcal) / daysWithMeals, 0),
-                ProteinGrams: Round(meals.Sum(meal => meal.ProteinGrams) / daysWithMeals),
-                CarbohydrateGrams: Round(meals.Sum(meal => meal.CarbohydrateGrams) / daysWithMeals),
-                FatGrams: Round(meals.Sum(meal => meal.FatGrams) / daysWithMeals),
-                VegetableMeals: Math.Round((decimal)meals.Count(meal => meal.HasVegetables) / daysWithMeals, 1)),
+                CaloriesKcal: Math.Round((meals.Sum(meal => meal.CaloriesKcal) + dailyNutritions.Sum(nutrition => nutrition.CaloriesKcal ?? 0)) / (decimal)daysWithMeals, 0),
+                ProteinGrams: Round((meals.Sum(meal => meal.ProteinGrams) + dailyNutritions.Sum(nutrition => nutrition.ProteinGrams ?? 0)) / daysWithMeals),
+                CarbohydrateGrams: Round((meals.Sum(meal => meal.CarbohydrateGrams) + dailyNutritions.Sum(nutrition => nutrition.CarbohydrateGrams ?? 0)) / daysWithMeals),
+                FatGrams: Round((meals.Sum(meal => meal.FatGrams) + dailyNutritions.Sum(nutrition => nutrition.FatGrams ?? 0)) / daysWithMeals),
+                VegetableMeals: Math.Round((decimal)meals.Count(meal => meal.HasVegetables) / daysWithMeals, 1),
+                FiberGrams: Round(dailyNutritions.Sum(nutrition => nutrition.FiberGrams ?? 0) / daysWithMeals),
+                SugarGrams: Round(dailyNutritions.Sum(nutrition => nutrition.SugarGrams ?? 0) / daysWithMeals),
+                WaterLiters: Round(dailyNutritions.Sum(nutrition => nutrition.WaterLiters ?? 0) / daysWithMeals)),
         LoggedDays7: daysWithMeals,
         LatestMeals: meals
             .OrderByDescending(meal => meal.EatenAtUtc)
             .Take(5)
+            .ToArray(),
+        LatestDailyNutritions: dailyNutritions
+            .OrderByDescending(nutrition => nutrition.LocalDate)
+            .ThenByDescending(nutrition => nutrition.RecordedAtUtc)
+            .Take(5)
             .ToArray());
 }
 
-static NutritionTotals BuildNutritionTotals(IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals) => new(
+static NutritionTotals BuildNutritionTotals(
+    IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyNutrition> dailyNutritions) => new(
     Meals: meals.Count,
-    CaloriesKcal: meals.Sum(meal => meal.CaloriesKcal),
-    ProteinGrams: Round(meals.Sum(meal => meal.ProteinGrams)),
-    CarbohydrateGrams: Round(meals.Sum(meal => meal.CarbohydrateGrams)),
-    FatGrams: Round(meals.Sum(meal => meal.FatGrams)),
-    VegetableMeals: meals.Count(meal => meal.HasVegetables));
+    CaloriesKcal: meals.Sum(meal => meal.CaloriesKcal) + dailyNutritions.Sum(nutrition => nutrition.CaloriesKcal ?? 0),
+    ProteinGrams: Round(meals.Sum(meal => meal.ProteinGrams) + dailyNutritions.Sum(nutrition => nutrition.ProteinGrams ?? 0)),
+    CarbohydrateGrams: Round(meals.Sum(meal => meal.CarbohydrateGrams) + dailyNutritions.Sum(nutrition => nutrition.CarbohydrateGrams ?? 0)),
+    FatGrams: Round(meals.Sum(meal => meal.FatGrams) + dailyNutritions.Sum(nutrition => nutrition.FatGrams ?? 0)),
+    VegetableMeals: meals.Count(meal => meal.HasVegetables),
+    FiberGrams: Round(dailyNutritions.Sum(nutrition => nutrition.FiberGrams ?? 0)),
+    SugarGrams: Round(dailyNutritions.Sum(nutrition => nutrition.SugarGrams ?? 0)),
+    WaterLiters: Round(dailyNutritions.Sum(nutrition => nutrition.WaterLiters ?? 0)));
 
 static ActivitySummary BuildActivitySummary(string localDate, IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> activities)
 {
@@ -879,16 +1052,21 @@ static ActivitySummary BuildActivitySummary(string localDate, IReadOnlyCollectio
 
     return new ActivitySummary(
         Today: todayActivities.Length == 0
-            ? new ActivityTotals(0, 0, 0, 0, 0, 0)
+            ? new ActivityTotals(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             : BuildActivityTotals(todayActivities),
         Average7Days: loggedDays == 0
-            ? new ActivityTotals(0, 0, 0, 0, 0, 0)
+            ? new ActivityTotals(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             : new ActivityTotals(
                 Steps: Math.Round((decimal)activities.Sum(activity => activity.Steps) / loggedDays, 0),
                 ActiveEnergyKcal: Math.Round((decimal)activities.Sum(activity => activity.ActiveEnergyKcal) / loggedDays, 0),
+                RestingEnergyKcal: Math.Round((decimal)activities.Sum(activity => activity.RestingEnergyKcal ?? 0) / loggedDays, 0),
                 ExerciseMinutes: Math.Round((decimal)activities.Sum(activity => activity.ExerciseMinutes) / loggedDays, 0),
+                StandHours: Math.Round((decimal)activities.Sum(activity => activity.StandHours ?? 0) / loggedDays, 1),
+                StandMinutes: Math.Round((decimal)activities.Sum(activity => activity.StandMinutes ?? 0) / loggedDays, 0),
                 WalkingRunningDistanceKm: Round(activities.Sum(activity => activity.WalkingRunningDistanceKm ?? 0) / loggedDays),
                 CyclingDistanceKm: Round(activities.Sum(activity => activity.CyclingDistanceKm ?? 0) / loggedDays),
+                FlightsClimbed: Math.Round((decimal)activities.Sum(activity => activity.FlightsClimbed ?? 0) / loggedDays, 0),
+                PhysicalEffortMet: Round(activities.Sum(activity => activity.PhysicalEffortMet ?? 0) / loggedDays),
                 WorkoutCount: Math.Round((decimal)activities.Sum(activity => activity.WorkoutCount) / loggedDays, 1)),
         LoggedDays7: loggedDays,
         LatestActivities: activities
@@ -901,21 +1079,76 @@ static ActivitySummary BuildActivitySummary(string localDate, IReadOnlyCollectio
 static ActivityTotals BuildActivityTotals(IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> activities) => new(
     Steps: activities.Sum(activity => activity.Steps),
     ActiveEnergyKcal: activities.Sum(activity => activity.ActiveEnergyKcal),
+    RestingEnergyKcal: activities.Sum(activity => activity.RestingEnergyKcal ?? 0),
     ExerciseMinutes: activities.Sum(activity => activity.ExerciseMinutes),
+    StandHours: activities.Sum(activity => activity.StandHours ?? 0),
+    StandMinutes: activities.Sum(activity => activity.StandMinutes ?? 0),
     WalkingRunningDistanceKm: Round(activities.Sum(activity => activity.WalkingRunningDistanceKm ?? 0)),
     CyclingDistanceKm: Round(activities.Sum(activity => activity.CyclingDistanceKm ?? 0)),
+    FlightsClimbed: activities.Sum(activity => activity.FlightsClimbed ?? 0),
+    PhysicalEffortMet: Round(activities.Sum(activity => activity.PhysicalEffortMet ?? 0)),
     WorkoutCount: activities.Sum(activity => activity.WorkoutCount));
 
-static Insight[] BuildNutritionInsights(string localDate, Insight[] currentInsights, IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals)
+static RecoverySummary BuildRecoverySummary(string localDate, IReadOnlyCollection<PulseBoard.Api.Models.DailyRecovery> recoveries)
+{
+    var todayRecoveries = recoveries
+        .Where(recovery => recovery.LocalDate == localDate)
+        .ToArray();
+    var loggedDays = recoveries
+        .Select(recovery => recovery.LocalDate)
+        .Distinct()
+        .Count();
+
+    return new RecoverySummary(
+        Today: todayRecoveries.Length == 0
+            ? new RecoveryTotals(0, 0, 0, 0, 0, 0, 0, 0, 0)
+            : BuildRecoveryTotals(todayRecoveries),
+        Average7Days: loggedDays == 0
+            ? new RecoveryTotals(0, 0, 0, 0, 0, 0, 0, 0, 0)
+            : new RecoveryTotals(
+                HeartRateBpm: Math.Round((decimal)recoveries.Sum(recovery => recovery.HeartRateBpm ?? 0) / loggedDays, 0),
+                RestingHeartRateBpm: Math.Round((decimal)recoveries.Sum(recovery => recovery.RestingHeartRateBpm ?? 0) / loggedDays, 0),
+                HeartRateVariabilityMs: Round(recoveries.Sum(recovery => recovery.HeartRateVariabilityMs ?? 0) / loggedDays),
+                BloodOxygenPercentage: Round(recoveries.Sum(recovery => recovery.BloodOxygenPercentage ?? 0) / loggedDays),
+                RespiratoryRateBreathsPerMinute: Round(recoveries.Sum(recovery => recovery.RespiratoryRateBreathsPerMinute ?? 0) / loggedDays),
+                SleepHours: Round(recoveries.Sum(recovery => recovery.SleepHours ?? 0) / loggedDays),
+                SleepScore: Round(recoveries.Sum(recovery => recovery.SleepScore ?? 0) / loggedDays),
+                Vo2Max: Round(recoveries.Sum(recovery => recovery.Vo2Max ?? 0) / loggedDays),
+                WalkingHeartRateAverageBpm: Math.Round((decimal)recoveries.Sum(recovery => recovery.WalkingHeartRateAverageBpm ?? 0) / loggedDays, 0)),
+        LoggedDays7: loggedDays,
+        LatestRecoveries: recoveries
+            .OrderByDescending(recovery => recovery.LocalDate)
+            .ThenByDescending(recovery => recovery.RecordedAtUtc)
+            .Take(7)
+            .ToArray());
+}
+
+static RecoveryTotals BuildRecoveryTotals(IReadOnlyCollection<PulseBoard.Api.Models.DailyRecovery> recoveries) => new(
+    HeartRateBpm: recoveries.Sum(recovery => recovery.HeartRateBpm ?? 0),
+    RestingHeartRateBpm: recoveries.Sum(recovery => recovery.RestingHeartRateBpm ?? 0),
+    HeartRateVariabilityMs: Round(recoveries.Sum(recovery => recovery.HeartRateVariabilityMs ?? 0)),
+    BloodOxygenPercentage: Round(recoveries.Sum(recovery => recovery.BloodOxygenPercentage ?? 0)),
+    RespiratoryRateBreathsPerMinute: Round(recoveries.Sum(recovery => recovery.RespiratoryRateBreathsPerMinute ?? 0)),
+    SleepHours: Round(recoveries.Sum(recovery => recovery.SleepHours ?? 0)),
+    SleepScore: Round(recoveries.Sum(recovery => recovery.SleepScore ?? 0)),
+    Vo2Max: Round(recoveries.Sum(recovery => recovery.Vo2Max ?? 0)),
+    WalkingHeartRateAverageBpm: recoveries.Sum(recovery => recovery.WalkingHeartRateAverageBpm ?? 0));
+
+static Insight[] BuildNutritionInsights(
+    string localDate,
+    Insight[] currentInsights,
+    IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyNutrition> dailyNutritions)
 {
     var insights = currentInsights.ToList();
     var todayMeals = meals.Where(meal => meal.LocalDate == localDate).ToArray();
+    var todayNutrition = dailyNutritions.Where(nutrition => nutrition.LocalDate == localDate).ToArray();
 
-    if (todayMeals.Length == 0)
+    if (todayMeals.Length == 0 && todayNutrition.Length == 0)
     {
         insights.Add(new Insight("nutrition", "info", "Aun no registraste comidas hoy.", "No meals have been logged today yet."));
     }
-    else if (todayMeals.Sum(meal => meal.ProteinGrams) >= 100)
+    else if (todayMeals.Sum(meal => meal.ProteinGrams) + todayNutrition.Sum(nutrition => nutrition.ProteinGrams ?? 0) >= 100)
     {
         insights.Add(new Insight("nutrition", "positive", "La proteina registrada hoy ya es alta.", "Logged protein today is already high."));
     }
@@ -934,25 +1167,29 @@ static AnalysisResponse BuildAnalysisSummary(
     string timeZoneId,
     string[] recentDates7,
     IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyRecovery> dailyRecoveries,
     IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
     IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
     IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyNutrition> dailyNutritions,
     IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> dailyActivities,
     IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements,
     TrendMetric[] bodyTrends)
 {
     var activity = BuildActivityComponent(dailyActivities);
-    var recovery = BuildRecoveryComponent(checkIns);
-    var nutrition = BuildNutritionComponent(meals);
+    var recovery = BuildRecoveryComponent(checkIns, dailyRecoveries);
+    var nutrition = BuildNutritionComponent(meals, dailyNutritions);
     var consistency = BuildConsistencyComponent(recentDates7, habits, completions, checkIns);
 
     var bodyData = BuildBodyDataSignal(measurements, bodyTrends);
-    var completeness = BuildDataCompleteness(checkIns, habits, completions, meals, dailyActivities, measurements);
+    var completeness = BuildDataCompleteness(checkIns, dailyRecoveries, habits, completions, meals, dailyNutritions, dailyActivities, measurements);
     var observations = BuildAnalysisObservations(
         checkIns,
+        dailyRecoveries,
         habits,
         completions,
         meals,
+        dailyNutritions,
         dailyActivities,
         bodyData,
         completeness);
@@ -1007,10 +1244,12 @@ static AnalysisComponent BuildActivityComponent(IReadOnlyCollection<PulseBoard.A
         ]);
 }
 
-static AnalysisComponent BuildRecoveryComponent(IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns)
+static AnalysisComponent BuildRecoveryComponent(
+    IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyRecovery> dailyRecoveries)
 {
     var recent = checkIns.Take(7).ToArray();
-    if (recent.Length == 0)
+    if (recent.Length == 0 && dailyRecoveries.Count == 0)
     {
         return new AnalysisComponent(
             "recovery",
@@ -1023,12 +1262,23 @@ static AnalysisComponent BuildRecoveryComponent(IReadOnlyList<PulseBoard.Api.Mod
             []);
     }
 
-    var averageSleep = recent.Average(checkIn => checkIn.SleepHours);
-    var averageEnergy = recent.Average(checkIn => (decimal)checkIn.Energy);
+    var averageSleep = recent.Length > 0
+        ? recent.Average(checkIn => checkIn.SleepHours)
+        : dailyRecoveries.Where(recovery => recovery.SleepHours is not null).DefaultIfEmpty().Average(recovery => recovery?.SleepHours ?? 0);
+    var averageEnergy = recent.Length > 0
+        ? recent.Average(checkIn => (decimal)checkIn.Energy)
+        : 0;
+    var averageRestingHeartRate = AverageOptionalInt(dailyRecoveries.Select(recovery => recovery.RestingHeartRateBpm));
+    var averageHrv = AverageOptionalDecimal(dailyRecoveries.Select(recovery => recovery.HeartRateVariabilityMs));
     var sleepScore = Math.Clamp(averageSleep / 8m * 100m, 0m, 100m);
-    var subjectiveScore = recent.Average(checkIn =>
-        (checkIn.SleepQuality + checkIn.Energy + checkIn.Mood + checkIn.Recovery + (6 - checkIn.Fatigue) + (6 - checkIn.Stress)) / 6m * 20m);
-    var score = (int)Math.Round(sleepScore * 0.35m + subjectiveScore * 0.65m, 0);
+    var subjectiveScore = recent.Length == 0
+        ? 0
+        : recent.Average(checkIn =>
+            (checkIn.SleepQuality + checkIn.Energy + checkIn.Mood + checkIn.Recovery + (6 - checkIn.Fatigue) + (6 - checkIn.Stress)) / 6m * 20m);
+    var wearableScore = Math.Clamp(dailyRecoveries.Select(recovery => recovery.LocalDate).Distinct().Count() / 7m * 100m, 0m, 100m);
+    var score = recent.Length == 0
+        ? (int)Math.Round(sleepScore * 0.65m + wearableScore * 0.35m, 0)
+        : (int)Math.Round(sleepScore * 0.3m + subjectiveScore * 0.55m + wearableScore * 0.15m, 0);
 
     return new AnalysisComponent(
         "recovery",
@@ -1036,18 +1286,27 @@ static AnalysisComponent BuildRecoveryComponent(IReadOnlyList<PulseBoard.Api.Mod
         "Recovery",
         score,
         ScoreStatus(score),
-        $"Promedio reciente: {Round(averageSleep)} h de sueno, energia {Round(averageEnergy)}/5.",
-        $"Recent average: {Round(averageSleep)} h of sleep, energy {Round(averageEnergy)}/5.",
+        recent.Length == 0
+            ? $"Apple Health registra {Round(averageSleep)} h de sueno, pulso reposo {Round(averageRestingHeartRate)} bpm y HRV {Round(averageHrv)} ms."
+            : $"Promedio reciente: {Round(averageSleep)} h de sueno, energia {Round(averageEnergy)}/5.",
+        recent.Length == 0
+            ? $"Apple Health logs {Round(averageSleep)} h of sleep, resting HR {Round(averageRestingHeartRate)} bpm and HRV {Round(averageHrv)} ms."
+            : $"Recent average: {Round(averageSleep)} h of sleep, energy {Round(averageEnergy)}/5.",
         [
             $"checkIns:{recent.Length}",
+            $"recoveryDays7:{dailyRecoveries.Select(recovery => recovery.LocalDate).Distinct().Count()}",
             $"sleepAverageHours:{Round(averageSleep)}",
-            $"energyAverage:{Round(averageEnergy)}"
+            $"energyAverage:{Round(averageEnergy)}",
+            $"restingHeartRateAverage:{Round(averageRestingHeartRate)}",
+            $"hrvAverageMs:{Round(averageHrv)}"
         ]);
 }
 
-static AnalysisComponent BuildNutritionComponent(IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals)
+static AnalysisComponent BuildNutritionComponent(
+    IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyNutrition> dailyNutritions)
 {
-    if (meals.Count == 0)
+    if (meals.Count == 0 && dailyNutritions.Count == 0)
     {
         return new AnalysisComponent(
             "nutrition",
@@ -1060,8 +1319,13 @@ static AnalysisComponent BuildNutritionComponent(IReadOnlyCollection<PulseBoard.
             []);
     }
 
-    var loggedDays = meals.Select(meal => meal.LocalDate).Distinct().Count();
-    var proteinAverage = meals.Sum(meal => meal.ProteinGrams) / loggedDays;
+    var loggedDays = meals
+        .Select(meal => meal.LocalDate)
+        .Concat(dailyNutritions.Select(nutrition => nutrition.LocalDate))
+        .Distinct()
+        .Count();
+    var proteinAverage = (meals.Sum(meal => meal.ProteinGrams) + dailyNutritions.Sum(nutrition => nutrition.ProteinGrams ?? 0)) / loggedDays;
+    var caloriesAverage = (meals.Sum(meal => meal.CaloriesKcal) + dailyNutritions.Sum(nutrition => nutrition.CaloriesKcal ?? 0)) / (decimal)loggedDays;
     var vegetableDays = meals
         .Where(meal => meal.HasVegetables)
         .Select(meal => meal.LocalDate)
@@ -1078,10 +1342,11 @@ static AnalysisComponent BuildNutritionComponent(IReadOnlyCollection<PulseBoard.
         "Nutrition",
         score,
         ScoreStatus(score),
-        $"Hay comidas en {loggedDays}/7 dias. Proteina media registrada: {Round(proteinAverage)} g/dia.",
-        $"Meals are logged on {loggedDays}/7 days. Logged protein average: {Round(proteinAverage)} g/day.",
+        $"Hay nutricion en {loggedDays}/7 dias. Media: {Round(caloriesAverage)} kcal y {Round(proteinAverage)} g de proteina.",
+        $"Nutrition is logged on {loggedDays}/7 days. Average: {Round(caloriesAverage)} kcal and {Round(proteinAverage)} g protein.",
         [
             $"loggedDays7:{loggedDays}",
+            $"caloriesAverageKcal:{Round(caloriesAverage)}",
             $"proteinAverageGrams:{Round(proteinAverage)}",
             $"vegetableDays7:{vegetableDays}"
         ]);
@@ -1158,18 +1423,20 @@ static BodyDataSignal BuildBodyDataSignal(
 
 static DataCompleteness BuildDataCompleteness(
     IReadOnlyCollection<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyRecovery> dailyRecoveries,
     IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
     IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
     IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyNutrition> dailyNutritions,
     IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> dailyActivities,
     IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements)
 {
     var present = new List<string>();
     var missing = new List<string>();
 
-    AddCompletenessSignal(checkIns.Count > 0, "check-in", present, missing);
+    AddCompletenessSignal(checkIns.Count > 0 || dailyRecoveries.Count > 0, "recovery", present, missing);
     AddCompletenessSignal(habits.Count > 0 && completions.Count > 0, "habits", present, missing);
-    AddCompletenessSignal(meals.Count > 0, "nutrition", present, missing);
+    AddCompletenessSignal(meals.Count > 0 || dailyNutritions.Count > 0, "nutrition", present, missing);
     AddCompletenessSignal(measurements.Count >= 3, "body", present, missing);
     AddCompletenessSignal(dailyActivities.Count > 0, "activity", present, missing);
 
@@ -1196,9 +1463,11 @@ static void AddCompletenessSignal(bool hasData, string key, ICollection<string> 
 
 static AnalysisObservation[] BuildAnalysisObservations(
     IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyRecovery> dailyRecoveries,
     IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
     IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
     IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyNutrition> dailyNutritions,
     IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> dailyActivities,
     BodyDataSignal bodyData,
     DataCompleteness completeness)
@@ -1219,6 +1488,17 @@ static AnalysisObservation[] BuildAnalysisObservations(
                 "Recent average sleep is below 7 hours and logged energy is not high.",
                 "sleepAverageHours<7 && energyAverage<=3"));
         }
+    }
+    else if (recentCheckIns.Length == 0 && dailyRecoveries.Count > 0)
+    {
+        var sleepAverage = AverageOptionalDecimal(dailyRecoveries.Select(recovery => recovery.SleepHours));
+        var hrvAverage = AverageOptionalDecimal(dailyRecoveries.Select(recovery => recovery.HeartRateVariabilityMs));
+        observations.Add(new AnalysisObservation(
+            "recovery",
+            "info",
+            $"Apple Health ya envia recuperacion: sueno {Round(sleepAverage)} h y HRV {Round(hrvAverage)} ms.",
+            $"Apple Health is sending recovery data: sleep {Round(sleepAverage)} h and HRV {Round(hrvAverage)} ms.",
+            "appleHealthRecoveryDays7>0"));
     }
 
     if (habits.Count > 0)
@@ -1277,7 +1557,7 @@ static AnalysisObservation[] BuildAnalysisObservations(
         }
     }
 
-    if (meals.Count == 0)
+    if (meals.Count == 0 && dailyNutritions.Count == 0)
     {
         observations.Add(new AnalysisObservation(
             "nutrition",
@@ -1288,8 +1568,12 @@ static AnalysisObservation[] BuildAnalysisObservations(
     }
     else
     {
-        var loggedDays = meals.Select(meal => meal.LocalDate).Distinct().Count();
-        var proteinAverage = meals.Sum(meal => meal.ProteinGrams) / loggedDays;
+        var loggedDays = meals
+            .Select(meal => meal.LocalDate)
+            .Concat(dailyNutritions.Select(nutrition => nutrition.LocalDate))
+            .Distinct()
+            .Count();
+        var proteinAverage = (meals.Sum(meal => meal.ProteinGrams) + dailyNutritions.Sum(nutrition => nutrition.ProteinGrams ?? 0)) / loggedDays;
         if (proteinAverage >= 100)
         {
             observations.Add(new AnalysisObservation(
@@ -1300,7 +1584,7 @@ static AnalysisObservation[] BuildAnalysisObservations(
                 "proteinAverageGrams>=100"));
         }
 
-        if (meals.All(meal => !meal.HasVegetables))
+        if (meals.Count > 0 && meals.All(meal => !meal.HasVegetables))
         {
             observations.Add(new AnalysisObservation(
                 "nutrition",
@@ -1308,6 +1592,16 @@ static AnalysisObservation[] BuildAnalysisObservations(
                 "No hay comidas recientes marcadas con verduras.",
                 "No recent meals are marked with vegetables.",
                 "vegetableMeals7==0"));
+        }
+
+        if (dailyNutritions.Count > 0)
+        {
+            observations.Add(new AnalysisObservation(
+                "nutrition",
+                "positive",
+                "Apple Health ya envia nutricion diaria; si Cal AI escribe ahi, PulseBoard la captura.",
+                "Apple Health is sending daily nutrition; if Cal AI writes there, PulseBoard captures it.",
+                "appleHealthNutritionDays7>0"));
         }
     }
 
@@ -1381,6 +1675,56 @@ static async Task<PulseBoard.Api.Models.DailyActivity> UpsertDailyActivityAsync(
     return activity;
 }
 
+static async Task<PulseBoard.Api.Models.DailyNutrition> UpsertDailyNutritionAsync(
+    PulseBoardDbContext db,
+    PulseBoard.Api.Models.DailyNutrition nutrition)
+{
+    var existing = await db.DailyNutritions.FirstOrDefaultAsync(current =>
+        current.UserId == nutrition.UserId
+        && current.LocalDate == nutrition.LocalDate
+        && current.Source == nutrition.Source);
+
+    if (existing is null)
+    {
+        db.DailyNutritions.Add(nutrition);
+        await db.SaveChangesAsync();
+        return nutrition;
+    }
+
+    db.DailyNutritions.Remove(existing);
+    await db.SaveChangesAsync();
+
+    db.DailyNutritions.Add(nutrition);
+    await db.SaveChangesAsync();
+
+    return nutrition;
+}
+
+static async Task<PulseBoard.Api.Models.DailyRecovery> UpsertDailyRecoveryAsync(
+    PulseBoardDbContext db,
+    PulseBoard.Api.Models.DailyRecovery recovery)
+{
+    var existing = await db.DailyRecoveries.FirstOrDefaultAsync(current =>
+        current.UserId == recovery.UserId
+        && current.LocalDate == recovery.LocalDate
+        && current.Source == recovery.Source);
+
+    if (existing is null)
+    {
+        db.DailyRecoveries.Add(recovery);
+        await db.SaveChangesAsync();
+        return recovery;
+    }
+
+    db.DailyRecoveries.Remove(existing);
+    await db.SaveChangesAsync();
+
+    db.DailyRecoveries.Add(recovery);
+    await db.SaveChangesAsync();
+
+    return recovery;
+}
+
 static bool TryBuildDailyActivityRequest(
     JsonElement payload,
     out CreateDailyActivityRequest? request,
@@ -1392,9 +1736,14 @@ static bool TryBuildDailyActivityRequest(
     var localDate = ReadString(payload, "localDate", errors);
     var steps = ReadInt(payload, "steps", errors);
     var activeEnergyKcal = ReadInt(payload, "activeEnergyKcal", errors);
+    var restingEnergyKcal = ReadNullableIntAny(payload, ["restingEnergyKcal", "restingEnergy", "basalEnergyKcal"], errors);
     var exerciseMinutes = ReadInt(payload, "exerciseMinutes", errors);
-    var walkingRunningDistanceKm = ReadNullableDecimal(payload, "walkingRunningDistanceKm", errors) ?? 0;
-    var cyclingDistanceKm = ReadNullableDecimal(payload, "cyclingDistanceKm", errors) ?? 0;
+    var standHours = ReadNullableIntAny(payload, ["standHours", "appleStandHours"], errors);
+    var standMinutes = ReadNullableIntAny(payload, ["standMinutes", "appleStandMinutes"], errors);
+    var walkingRunningDistanceKm = ReadNullableDecimalAny(payload, ["walkingRunningDistanceKm", "walkingDistanceKm"], errors) ?? 0;
+    var cyclingDistanceKm = ReadNullableDecimalAny(payload, ["cyclingDistanceKm", "bikeDistanceKm"], errors) ?? 0;
+    var flightsClimbed = ReadNullableIntAny(payload, ["flightsClimbed", "flights"], errors);
+    var physicalEffortMet = ReadNullableDecimalAny(payload, ["physicalEffortMet", "physicalEffort", "mets"], errors);
     var workoutCount = ReadInt(payload, "workoutCount", errors);
     var notes = ReadOptionalString(payload, "notes");
 
@@ -1407,10 +1756,103 @@ static bool TryBuildDailyActivityRequest(
         localDate!,
         steps!.Value,
         activeEnergyKcal!.Value,
+        restingEnergyKcal,
         exerciseMinutes!.Value,
+        standHours,
+        standMinutes,
         walkingRunningDistanceKm,
         cyclingDistanceKm,
+        flightsClimbed,
+        physicalEffortMet,
         workoutCount!.Value,
+        notes);
+
+    foreach (var error in request.Validate())
+    {
+        errors[error.Key] = error.Value;
+    }
+
+    return errors.Count == 0;
+}
+
+static bool TryBuildDailyNutritionRequest(
+    JsonElement payload,
+    out CreateDailyNutritionRequest? request,
+    out Dictionary<string, string[]> errors)
+{
+    request = null;
+    errors = new Dictionary<string, string[]>();
+
+    var localDate = ReadString(payload, "localDate", errors);
+    var caloriesKcal = ReadNullableIntAny(payload, ["caloriesKcal", "dietaryEnergyKcal", "dietaryEnergy", "energyConsumedKcal"], errors);
+    var proteinGrams = ReadNullableDecimalAny(payload, ["proteinGrams", "protein", "dietaryProtein"], errors);
+    var carbohydrateGrams = ReadNullableDecimalAny(payload, ["carbohydrateGrams", "carbsGrams", "carbs", "dietaryCarbohydrates"], errors);
+    var fatGrams = ReadNullableDecimalAny(payload, ["fatGrams", "fat", "dietaryFatTotal"], errors);
+    var fiberGrams = ReadNullableDecimalAny(payload, ["fiberGrams", "fiber", "dietaryFiber"], errors);
+    var sugarGrams = ReadNullableDecimalAny(payload, ["sugarGrams", "sugar", "dietarySugar"], errors);
+    var waterLiters = ReadNullableDecimalAny(payload, ["waterLiters", "water", "dietaryWater"], errors);
+    var notes = ReadOptionalString(payload, "notes");
+
+    if (errors.Count > 0)
+    {
+        return false;
+    }
+
+    request = new CreateDailyNutritionRequest(
+        localDate!,
+        caloriesKcal,
+        proteinGrams,
+        carbohydrateGrams,
+        fatGrams,
+        fiberGrams,
+        sugarGrams,
+        waterLiters,
+        notes);
+
+    foreach (var error in request.Validate())
+    {
+        errors[error.Key] = error.Value;
+    }
+
+    return errors.Count == 0;
+}
+
+static bool TryBuildDailyRecoveryRequest(
+    JsonElement payload,
+    out CreateDailyRecoveryRequest? request,
+    out Dictionary<string, string[]> errors)
+{
+    request = null;
+    errors = new Dictionary<string, string[]>();
+
+    var localDate = ReadString(payload, "localDate", errors);
+    var heartRateBpm = ReadNullableIntAny(payload, ["heartRateBpm", "heartRate"], errors);
+    var restingHeartRateBpm = ReadNullableIntAny(payload, ["restingHeartRateBpm", "restingHeartRate"], errors);
+    var heartRateVariabilityMs = ReadNullableDecimalAny(payload, ["heartRateVariabilityMs", "hrvMs", "hrv"], errors);
+    var bloodOxygenPercentage = ReadNullableDecimalAny(payload, ["bloodOxygenPercentage", "bloodOxygen"], errors);
+    var respiratoryRateBreathsPerMinute = ReadNullableDecimalAny(payload, ["respiratoryRateBreathsPerMinute", "respiratoryRate"], errors);
+    var sleepHours = ReadNullableDecimalAny(payload, ["sleepHours", "timeAsleepHours", "timeAsleep"], errors);
+    var sleepScore = ReadNullableDecimalAny(payload, ["sleepScore"], errors);
+    var vo2Max = ReadNullableDecimalAny(payload, ["vo2Max", "cardioFitness"], errors);
+    var walkingHeartRateAverageBpm = ReadNullableIntAny(payload, ["walkingHeartRateAverageBpm", "walkingHeartRateAverage"], errors);
+    var notes = ReadOptionalString(payload, "notes");
+
+    if (errors.Count > 0)
+    {
+        return false;
+    }
+
+    request = new CreateDailyRecoveryRequest(
+        localDate!,
+        heartRateBpm,
+        restingHeartRateBpm,
+        heartRateVariabilityMs,
+        bloodOxygenPercentage,
+        respiratoryRateBreathsPerMinute,
+        sleepHours,
+        sleepScore,
+        vo2Max,
+        walkingHeartRateAverageBpm,
         notes);
 
     foreach (var error in request.Validate())
@@ -1458,14 +1900,23 @@ static int? ReadInt(JsonElement payload, string propertyName, IDictionary<string
     return value is null ? null : (int)Math.Round(value.Value, 0, MidpointRounding.AwayFromZero);
 }
 
-static decimal? ReadNullableDecimal(JsonElement payload, string propertyName, IDictionary<string, string[]> errors)
+static decimal? ReadNullableDecimalAny(JsonElement payload, string[] propertyNames, IDictionary<string, string[]> errors)
 {
-    if (!payload.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
+    foreach (var propertyName in propertyNames)
     {
-        return null;
+        if (payload.TryGetProperty(propertyName, out var value) && value.ValueKind != JsonValueKind.Null)
+        {
+            return ConvertJsonElementToDecimal(value, propertyName, errors);
+        }
     }
 
-    return ConvertJsonElementToDecimal(value, propertyName, errors);
+    return null;
+}
+
+static int? ReadNullableIntAny(JsonElement payload, string[] propertyNames, IDictionary<string, string[]> errors)
+{
+    var value = ReadNullableDecimalAny(payload, propertyNames, errors);
+    return value is null ? null : (int)Math.Round(value.Value, 0, MidpointRounding.AwayFromZero);
 }
 
 static decimal? ReadDecimal(JsonElement payload, string propertyName, IDictionary<string, string[]> errors)
@@ -1503,6 +1954,15 @@ static decimal? ConvertJsonElementToDecimal(JsonElement value, string propertyNa
 
     errors[propertyName] = [$"{propertyName} must be a number. Received: {value}"];
     return null;
+}
+
+static decimal AverageOptionalInt(IEnumerable<int?> values)
+    => AverageOptionalDecimal(values.Select(value => value is null ? (decimal?)null : value.Value));
+
+static decimal AverageOptionalDecimal(IEnumerable<decimal?> values)
+{
+    var present = values.Where(value => value is not null).Select(value => value!.Value).ToArray();
+    return present.Length == 0 ? 0 : present.Average();
 }
 
 static DateOnly GetLocalDate(DateTimeOffset utcDateTime, string timeZoneId)
@@ -1593,9 +2053,14 @@ static async Task EnsureDatabaseAsync(PulseBoardDbContext db)
             "TimeZoneId" character varying(80) NOT NULL,
             "Steps" integer NOT NULL,
             "ActiveEnergyKcal" integer NOT NULL,
+            "RestingEnergyKcal" integer NULL,
             "ExerciseMinutes" integer NOT NULL,
+            "StandHours" integer NULL,
+            "StandMinutes" integer NULL,
             "WalkingRunningDistanceKm" numeric(8,2) NULL,
             "CyclingDistanceKm" numeric(8,2) NULL,
+            "FlightsClimbed" integer NULL,
+            "PhysicalEffortMet" numeric(6,2) NULL,
             "WorkoutCount" integer NOT NULL,
             "Source" character varying(40) NOT NULL,
             "Notes" character varying(1000) NULL,
@@ -1608,6 +2073,69 @@ static async Task EnsureDatabaseAsync(PulseBoardDbContext db)
     await db.Database.ExecuteSqlRawAsync("""
         CREATE UNIQUE INDEX IF NOT EXISTS "IX_DailyActivities_UserId_LocalDate_Source"
             ON "DailyActivities" ("UserId", "LocalDate", "Source");
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        ALTER TABLE "DailyActivities"
+            ADD COLUMN IF NOT EXISTS "RestingEnergyKcal" integer NULL,
+            ADD COLUMN IF NOT EXISTS "StandHours" integer NULL,
+            ADD COLUMN IF NOT EXISTS "StandMinutes" integer NULL,
+            ADD COLUMN IF NOT EXISTS "FlightsClimbed" integer NULL,
+            ADD COLUMN IF NOT EXISTS "PhysicalEffortMet" numeric(6,2) NULL;
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "DailyNutritions" (
+            "Id" uuid NOT NULL,
+            "UserId" character varying(80) NOT NULL,
+            "LocalDate" character varying(10) NOT NULL,
+            "TimeZoneId" character varying(80) NOT NULL,
+            "CaloriesKcal" integer NULL,
+            "ProteinGrams" numeric(7,2) NULL,
+            "CarbohydrateGrams" numeric(7,2) NULL,
+            "FatGrams" numeric(7,2) NULL,
+            "FiberGrams" numeric(7,2) NULL,
+            "SugarGrams" numeric(7,2) NULL,
+            "WaterLiters" numeric(6,2) NULL,
+            "Source" character varying(40) NOT NULL,
+            "Notes" character varying(1000) NULL,
+            "RecordedAtUtc" timestamp with time zone NOT NULL,
+            "CreatedAtUtc" timestamp with time zone NOT NULL,
+            CONSTRAINT "PK_DailyNutritions" PRIMARY KEY ("Id")
+        );
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_DailyNutritions_UserId_LocalDate_Source"
+            ON "DailyNutritions" ("UserId", "LocalDate", "Source");
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "DailyRecoveries" (
+            "Id" uuid NOT NULL,
+            "UserId" character varying(80) NOT NULL,
+            "LocalDate" character varying(10) NOT NULL,
+            "TimeZoneId" character varying(80) NOT NULL,
+            "HeartRateBpm" integer NULL,
+            "RestingHeartRateBpm" integer NULL,
+            "HeartRateVariabilityMs" numeric(6,2) NULL,
+            "BloodOxygenPercentage" numeric(5,2) NULL,
+            "RespiratoryRateBreathsPerMinute" numeric(5,2) NULL,
+            "SleepHours" numeric(5,2) NULL,
+            "SleepScore" numeric(5,2) NULL,
+            "Vo2Max" numeric(5,2) NULL,
+            "WalkingHeartRateAverageBpm" integer NULL,
+            "Source" character varying(40) NOT NULL,
+            "Notes" character varying(1000) NULL,
+            "RecordedAtUtc" timestamp with time zone NOT NULL,
+            "CreatedAtUtc" timestamp with time zone NOT NULL,
+            CONSTRAINT "PK_DailyRecoveries" PRIMARY KEY ("Id")
+        );
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_DailyRecoveries_UserId_LocalDate_Source"
+            ON "DailyRecoveries" ("UserId", "LocalDate", "Source");
         """);
 }
 
@@ -1623,6 +2151,7 @@ public sealed record DashboardResponse(
     NutritionSummary Nutrition,
     ActivitySummary Activity,
     BodyDashboard Body,
+    RecoverySummary Recovery,
     Insight[] Insights);
 
 public sealed record TodaySummary(
@@ -1642,7 +2171,8 @@ public sealed record NutritionSummary(
     NutritionTotals Today,
     NutritionTotals Average7Days,
     int LoggedDays7,
-    PulseBoard.Api.Models.Meal[] LatestMeals);
+    PulseBoard.Api.Models.Meal[] LatestMeals,
+    PulseBoard.Api.Models.DailyNutrition[] LatestDailyNutritions);
 
 public sealed record NutritionTotals(
     decimal Meals,
@@ -1650,7 +2180,10 @@ public sealed record NutritionTotals(
     decimal ProteinGrams,
     decimal CarbohydrateGrams,
     decimal FatGrams,
-    decimal VegetableMeals);
+    decimal VegetableMeals,
+    decimal FiberGrams,
+    decimal SugarGrams,
+    decimal WaterLiters);
 
 public sealed record ActivitySummary(
     ActivityTotals Today,
@@ -1661,10 +2194,32 @@ public sealed record ActivitySummary(
 public sealed record ActivityTotals(
     decimal Steps,
     decimal ActiveEnergyKcal,
+    decimal RestingEnergyKcal,
     decimal ExerciseMinutes,
+    decimal StandHours,
+    decimal StandMinutes,
     decimal WalkingRunningDistanceKm,
     decimal CyclingDistanceKm,
+    decimal FlightsClimbed,
+    decimal PhysicalEffortMet,
     decimal WorkoutCount);
+
+public sealed record RecoverySummary(
+    RecoveryTotals Today,
+    RecoveryTotals Average7Days,
+    int LoggedDays7,
+    PulseBoard.Api.Models.DailyRecovery[] LatestRecoveries);
+
+public sealed record RecoveryTotals(
+    decimal HeartRateBpm,
+    decimal RestingHeartRateBpm,
+    decimal HeartRateVariabilityMs,
+    decimal BloodOxygenPercentage,
+    decimal RespiratoryRateBreathsPerMinute,
+    decimal SleepHours,
+    decimal SleepScore,
+    decimal Vo2Max,
+    decimal WalkingHeartRateAverageBpm);
 
 public sealed record BodyDashboard(
     PulseBoard.Api.Models.BodyMeasurement? Latest,

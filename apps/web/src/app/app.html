@@ -143,8 +143,8 @@
 
       <dl class="nutrition-totals">
         <div>
-          <dt>{{ t('meals') }}</dt>
-          <dd>{{ formatNumber(nutrition()?.today?.meals, '') }}</dd>
+          <dt>{{ t('calories') }}</dt>
+          <dd>{{ formatNumber(nutrition()?.today?.caloriesKcal, ' kcal') }}</dd>
         </div>
         <div>
           <dt>{{ t('protein') }}</dt>
@@ -157,6 +157,10 @@
         <div>
           <dt>{{ t('fat') }}</dt>
           <dd>{{ formatNumber(nutrition()?.today?.fatGrams, ' g') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('fiber') }}</dt>
+          <dd>{{ formatNumber(nutrition()?.today?.fiberGrams, ' g') }}</dd>
         </div>
       </dl>
     </article>
@@ -180,12 +184,53 @@
           <dd>{{ formatNumber(activity()?.today?.activeEnergyKcal, ' kcal') }}</dd>
         </div>
         <div>
+          <dt>{{ t('restingEnergy') }}</dt>
+          <dd>{{ formatNumber(activity()?.today?.restingEnergyKcal, ' kcal') }}</dd>
+        </div>
+        <div>
           <dt>{{ t('exercise') }}</dt>
           <dd>{{ formatNumber(activity()?.today?.exerciseMinutes, ' min') }}</dd>
         </div>
         <div>
+          <dt>{{ t('stand') }}</dt>
+          <dd>{{ formatNumber(activity()?.today?.standHours, ' h') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('flights') }}</dt>
+          <dd>{{ formatNumber(activity()?.today?.flightsClimbed, '') }}</dd>
+        </div>
+        <div>
           <dt>{{ t('sevenDays') }}</dt>
           <dd>{{ activity()?.loggedDays7 || 0 }}/7</dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="panel activity-panel">
+      <div class="panel-heading">
+        <span><svg lucideHeartPulse size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>Apple Health</p>
+          <strong>{{ t('recovery') }}</strong>
+        </div>
+      </div>
+
+      <dl class="nutrition-totals">
+        <div>
+          <dt>{{ t('sleep') }}</dt>
+          <dd>{{ formatNumber(recoverySummary()?.today?.sleepHours, ' h') }}</dd>
+        </div>
+        <div>
+          <dt>HRV</dt>
+          <dd>{{ formatNumber(recoverySummary()?.today?.heartRateVariabilityMs, ' ms') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('restingHeartRate') }}</dt>
+          <dd>{{ formatNumber(recoverySummary()?.today?.restingHeartRateBpm, ' bpm') }}</dd>
+        </div>
+        <div>
+          <dt>SpO2</dt>
+          <dd>{{ formatNumber(recoverySummary()?.today?.bloodOxygenPercentage, ' %') }}</dd>
         </div>
       </dl>
     </article>

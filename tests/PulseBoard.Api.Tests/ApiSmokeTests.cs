@@ -280,6 +280,76 @@ public sealed class ApiSmokeTests
     }
 
     [Fact]
+    public async Task AppleHealthBridge_Can_Upsert_Daily_Nutrition()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+        var today = GetViennaDate();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/integrations/apple-health/daily-nutrition")
+        {
+            Content = JsonContent.Create(new Dictionary<string, object?>
+            {
+                ["localDate"] = today,
+                ["dietaryEnergy"] = "2100 kcal",
+                ["protein"] = "145 g",
+                ["carbs"] = "220 g",
+                ["fat"] = "70 g",
+                ["fiber"] = "28 g",
+                ["waterLiters"] = "2,4",
+                ["notes"] = "Cal AI via Apple Health"
+            })
+        };
+        request.Headers.Add("X-PulseBoard-Bridge-Key", "test-bridge-key");
+
+        var response = await client.SendAsync(request);
+        var summaryResponse = await client.GetAsync($"/api/v1/nutrition-summary?localDate={today}");
+        var summary = await summaryResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2100, summary.GetProperty("today").GetProperty("caloriesKcal").GetDecimal());
+        Assert.Equal(145, summary.GetProperty("today").GetProperty("proteinGrams").GetDecimal());
+        Assert.Equal(28, summary.GetProperty("today").GetProperty("fiberGrams").GetDecimal());
+        Assert.Equal(2.4m, summary.GetProperty("today").GetProperty("waterLiters").GetDecimal());
+    }
+
+    [Fact]
+    public async Task AppleHealthBridge_Can_Upsert_Daily_Recovery()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+        var today = GetViennaDate();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/integrations/apple-health/daily-recovery")
+        {
+            Content = JsonContent.Create(new Dictionary<string, object?>
+            {
+                ["localDate"] = today,
+                ["restingHeartRate"] = "60 BPM",
+                ["hrv"] = "26 ms",
+                ["bloodOxygen"] = "95%",
+                ["respiratoryRate"] = "18 breaths/min",
+                ["timeAsleepHours"] = "6,8",
+                ["vo2Max"] = "39,3",
+                ["walkingHeartRateAverage"] = "83 BPM",
+                ["notes"] = "Apple Health Shortcut"
+            })
+        };
+        request.Headers.Add("X-PulseBoard-Bridge-Key", "test-bridge-key");
+
+        var response = await client.SendAsync(request);
+        var recoveryResponse = await client.GetAsync("/api/v1/daily-recovery?limit=1");
+        var recoveries = await recoveryResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, recoveryResponse.StatusCode);
+        Assert.Equal(1, recoveries.GetArrayLength());
+        Assert.Equal(60, recoveries[0].GetProperty("restingHeartRateBpm").GetInt32());
+        Assert.Equal(26, recoveries[0].GetProperty("heartRateVariabilityMs").GetDecimal());
+        Assert.Equal(6.8m, recoveries[0].GetProperty("sleepHours").GetDecimal());
+    }
+
+    [Fact]
     public async Task AppleHealthBridge_Requires_Key()
     {
         using var application = CreateApplication();

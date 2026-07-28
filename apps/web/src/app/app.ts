@@ -70,10 +70,45 @@ interface DailyActivity {
   localDate: string;
   steps: number;
   activeEnergyKcal: number;
+  restingEnergyKcal?: number;
   exerciseMinutes: number;
+  standHours?: number;
+  standMinutes?: number;
   walkingRunningDistanceKm?: number;
   cyclingDistanceKm?: number;
+  flightsClimbed?: number;
+  physicalEffortMet?: number;
   workoutCount: number;
+  source: string;
+  recordedAtUtc: string;
+}
+
+interface DailyNutrition {
+  id: string;
+  localDate: string;
+  caloriesKcal?: number;
+  proteinGrams?: number;
+  carbohydrateGrams?: number;
+  fatGrams?: number;
+  fiberGrams?: number;
+  sugarGrams?: number;
+  waterLiters?: number;
+  source: string;
+  recordedAtUtc: string;
+}
+
+interface DailyRecovery {
+  id: string;
+  localDate: string;
+  heartRateBpm?: number;
+  restingHeartRateBpm?: number;
+  heartRateVariabilityMs?: number;
+  bloodOxygenPercentage?: number;
+  respiratoryRateBreathsPerMinute?: number;
+  sleepHours?: number;
+  sleepScore?: number;
+  vo2Max?: number;
+  walkingHeartRateAverageBpm?: number;
   source: string;
   recordedAtUtc: string;
 }
@@ -112,6 +147,7 @@ interface DashboardSummary {
   };
   nutrition: NutritionSummary;
   activity: ActivitySummary;
+  recovery: RecoverySummary;
   body: {
     latest?: BodyMeasurement;
     trends: TrendMetric[];
@@ -170,6 +206,7 @@ interface NutritionSummary {
   average7Days: NutritionTotals;
   loggedDays7: number;
   latestMeals: Meal[];
+  latestDailyNutritions: DailyNutrition[];
 }
 
 interface NutritionTotals {
@@ -179,6 +216,9 @@ interface NutritionTotals {
   carbohydrateGrams: number;
   fatGrams: number;
   vegetableMeals: number;
+  fiberGrams: number;
+  sugarGrams: number;
+  waterLiters: number;
 }
 
 interface ActivitySummary {
@@ -191,10 +231,34 @@ interface ActivitySummary {
 interface ActivityTotals {
   steps: number;
   activeEnergyKcal: number;
+  restingEnergyKcal: number;
   exerciseMinutes: number;
+  standHours: number;
+  standMinutes: number;
   walkingRunningDistanceKm: number;
   cyclingDistanceKm: number;
+  flightsClimbed: number;
+  physicalEffortMet: number;
   workoutCount: number;
+}
+
+interface RecoverySummary {
+  today: RecoveryTotals;
+  average7Days: RecoveryTotals;
+  loggedDays7: number;
+  latestRecoveries: DailyRecovery[];
+}
+
+interface RecoveryTotals {
+  heartRateBpm: number;
+  restingHeartRateBpm: number;
+  heartRateVariabilityMs: number;
+  bloodOxygenPercentage: number;
+  respiratoryRateBreathsPerMinute: number;
+  sleepHours: number;
+  sleepScore: number;
+  vo2Max: number;
+  walkingHeartRateAverageBpm: number;
 }
 
 interface TrendMetric {
@@ -238,6 +302,7 @@ const translations = {
     apiOnline: 'API conectada',
     activeEnergy: 'Energia activa',
     activity: 'Actividad',
+    appleNutrition: 'Apple Health',
     body: 'Composicion',
     carbs: 'Carbohidratos',
     calories: 'Calorias',
@@ -253,6 +318,8 @@ const translations = {
     estimatedCalories: 'Calorias estimadas',
     exercise: 'Ejercicio',
     fatigue: 'Fatiga',
+    fiber: 'Fibra',
+    flights: 'Pisos',
     food: 'Alimentacion',
     fat: 'Grasas',
     habitName: 'Nombre del habito',
@@ -278,6 +345,8 @@ const translations = {
     readiness: 'Preparacion',
     recovery: 'Recuperacion',
     refresh: 'Actualizar',
+    restingEnergy: 'Energia reposo',
+    restingHeartRate: 'Pulso reposo',
     save: 'Guardar',
     saveMeasurement: 'Guardar medicion',
     saveMeal: 'Guardar comida',
@@ -285,10 +354,12 @@ const translations = {
     sleep: 'Sueno',
     sleepHours: 'Horas de sueno',
     sleepQuality: 'Calidad de sueno',
+    sleepScore: 'Punt. sueno',
     soreness: 'Dolor muscular',
     source: 'Fuente',
     status: 'Estado',
     steps: 'Pasos',
+    stand: 'De pie',
     stress: 'Estres',
     timezone: 'Zona horaria',
     today: 'Hoy',
@@ -306,6 +377,7 @@ const translations = {
     apiOnline: 'API connected',
     activeEnergy: 'Active energy',
     activity: 'Activity',
+    appleNutrition: 'Apple Health',
     body: 'Body',
     carbs: 'Carbs',
     calories: 'Calories',
@@ -321,6 +393,8 @@ const translations = {
     estimatedCalories: 'Estimated calories',
     exercise: 'Exercise',
     fatigue: 'Fatigue',
+    fiber: 'Fiber',
+    flights: 'Flights',
     food: 'Nutrition',
     fat: 'Fat',
     habitName: 'Habit name',
@@ -346,6 +420,8 @@ const translations = {
     readiness: 'Readiness',
     recovery: 'Recovery',
     refresh: 'Refresh',
+    restingEnergy: 'Resting energy',
+    restingHeartRate: 'Resting HR',
     save: 'Save',
     saveMeasurement: 'Save measurement',
     saveMeal: 'Save meal',
@@ -353,10 +429,12 @@ const translations = {
     sleep: 'Sleep',
     sleepHours: 'Sleep hours',
     sleepQuality: 'Sleep quality',
+    sleepScore: 'Sleep score',
     soreness: 'Muscle soreness',
     source: 'Source',
     status: 'Status',
     steps: 'Steps',
+    stand: 'Stand',
     stress: 'Stress',
     timezone: 'Time zone',
     today: 'Today',
@@ -444,6 +522,7 @@ export class App {
   readonly insights = computed(() => this.dashboardSummary()?.insights ?? []);
   readonly nutrition = computed(() => this.dashboardSummary()?.nutrition);
   readonly activity = computed(() => this.dashboardSummary()?.activity);
+  readonly recoverySummary = computed(() => this.dashboardSummary()?.recovery);
   readonly analysisComponents = computed(() => this.analysisSummary()?.components ?? []);
   readonly analysisObservations = computed(() => this.analysisSummary()?.observations ?? []);
 

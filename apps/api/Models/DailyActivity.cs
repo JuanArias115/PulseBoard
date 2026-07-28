@@ -14,11 +14,21 @@ public sealed class DailyActivity
 
     public int ActiveEnergyKcal { get; init; }
 
+    public int? RestingEnergyKcal { get; init; }
+
     public int ExerciseMinutes { get; init; }
+
+    public int? StandHours { get; init; }
+
+    public int? StandMinutes { get; init; }
 
     public decimal? WalkingRunningDistanceKm { get; init; }
 
     public decimal? CyclingDistanceKm { get; init; }
+
+    public int? FlightsClimbed { get; init; }
+
+    public decimal? PhysicalEffortMet { get; init; }
 
     public int WorkoutCount { get; init; }
 

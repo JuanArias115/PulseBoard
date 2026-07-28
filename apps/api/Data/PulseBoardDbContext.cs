@@ -17,6 +17,10 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
 
     public DbSet<DailyActivity> DailyActivities => Set<DailyActivity>();
 
+    public DbSet<DailyNutrition> DailyNutritions => Set<DailyNutrition>();
+
+    public DbSet<DailyRecovery> DailyRecoveries => Set<DailyRecovery>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CheckIn>(entity =>
@@ -96,7 +100,42 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
             entity.Property(activity => activity.Notes).HasMaxLength(1000);
             entity.Property(activity => activity.WalkingRunningDistanceKm).HasPrecision(8, 2);
             entity.Property(activity => activity.CyclingDistanceKm).HasPrecision(8, 2);
+            entity.Property(activity => activity.PhysicalEffortMet).HasPrecision(6, 2);
             entity.HasIndex(activity => new { activity.UserId, activity.LocalDate, activity.Source }).IsUnique();
+        });
+
+        modelBuilder.Entity<DailyNutrition>(entity =>
+        {
+            entity.HasKey(nutrition => nutrition.Id);
+            entity.Property(nutrition => nutrition.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(nutrition => nutrition.LocalDate).HasMaxLength(10).IsRequired();
+            entity.Property(nutrition => nutrition.TimeZoneId).HasMaxLength(80).IsRequired();
+            entity.Property(nutrition => nutrition.Source).HasMaxLength(40).IsRequired();
+            entity.Property(nutrition => nutrition.Notes).HasMaxLength(1000);
+            entity.Property(nutrition => nutrition.ProteinGrams).HasPrecision(7, 2);
+            entity.Property(nutrition => nutrition.CarbohydrateGrams).HasPrecision(7, 2);
+            entity.Property(nutrition => nutrition.FatGrams).HasPrecision(7, 2);
+            entity.Property(nutrition => nutrition.FiberGrams).HasPrecision(7, 2);
+            entity.Property(nutrition => nutrition.SugarGrams).HasPrecision(7, 2);
+            entity.Property(nutrition => nutrition.WaterLiters).HasPrecision(6, 2);
+            entity.HasIndex(nutrition => new { nutrition.UserId, nutrition.LocalDate, nutrition.Source }).IsUnique();
+        });
+
+        modelBuilder.Entity<DailyRecovery>(entity =>
+        {
+            entity.HasKey(recovery => recovery.Id);
+            entity.Property(recovery => recovery.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(recovery => recovery.LocalDate).HasMaxLength(10).IsRequired();
+            entity.Property(recovery => recovery.TimeZoneId).HasMaxLength(80).IsRequired();
+            entity.Property(recovery => recovery.Source).HasMaxLength(40).IsRequired();
+            entity.Property(recovery => recovery.Notes).HasMaxLength(1000);
+            entity.Property(recovery => recovery.HeartRateVariabilityMs).HasPrecision(6, 2);
+            entity.Property(recovery => recovery.BloodOxygenPercentage).HasPrecision(5, 2);
+            entity.Property(recovery => recovery.RespiratoryRateBreathsPerMinute).HasPrecision(5, 2);
+            entity.Property(recovery => recovery.SleepHours).HasPrecision(5, 2);
+            entity.Property(recovery => recovery.SleepScore).HasPrecision(5, 2);
+            entity.Property(recovery => recovery.Vo2Max).HasPrecision(5, 2);
+            entity.HasIndex(recovery => new { recovery.UserId, recovery.LocalDate, recovery.Source }).IsUnique();
         });
     }
 }

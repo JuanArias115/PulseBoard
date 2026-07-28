@@ -157,6 +157,8 @@ Devuelve hasta 20 comidas marcadas como favoritas.
 
 Devuelve totales del dia, promedio de los ultimos 7 dias con datos y ultimas comidas.
 
+Incluye comidas manuales y nutricion diaria enviada desde Apple Health, por ejemplo si una app como Cal AI escribe `Dietary Energy`, proteina, carbohidratos o grasa en Salud.
+
 La primera version no calcula objetivos nutricionales automaticos. Solo registra y resume datos.
 
 ## Daily activity
@@ -176,9 +178,14 @@ Devuelve actividad del dia, promedios de los ultimos 7 dias con datos y ultimos 
   "localDate": "2026-07-28",
   "steps": 8450,
   "activeEnergyKcal": 520,
+  "restingEnergyKcal": 1360,
   "exerciseMinutes": 42,
+  "standHours": 8,
+  "standMinutes": 60,
   "walkingRunningDistanceKm": 5.8,
   "cyclingDistanceKm": 0,
+  "flightsClimbed": 4,
+  "physicalEffortMet": 4.3,
   "workoutCount": 1,
   "notes": "Manual entry"
 }
@@ -244,12 +251,79 @@ Body esperado:
   "localDate": "2026-07-28",
   "steps": 8450,
   "activeEnergyKcal": 520,
+  "restingEnergyKcal": 1360,
   "exerciseMinutes": 42,
+  "standHours": 8,
+  "standMinutes": 60,
   "walkingRunningDistanceKm": 5.8,
   "cyclingDistanceKm": 0,
+  "flightsClimbed": 4,
+  "physicalEffortMet": 4.3,
   "workoutCount": 1,
   "notes": "Apple Health via Shortcuts"
 }
 ```
 
 El registro queda con `source = AppleHealth`. Si el Atajo se ejecuta varias veces el mismo dia, reemplaza el dato anterior del dia en lugar de crear duplicados.
+
+## Apple Health daily nutrition bridge
+
+```text
+POST /api/v1/integrations/apple-health/daily-nutrition
+```
+
+Header obligatorio:
+
+```text
+X-PulseBoard-Bridge-Key: <server bridge key>
+```
+
+Body esperado:
+
+```json
+{
+  "localDate": "2026-07-28",
+  "caloriesKcal": 2100,
+  "proteinGrams": 145,
+  "carbohydrateGrams": 220,
+  "fatGrams": 70,
+  "fiberGrams": 28,
+  "sugarGrams": 45,
+  "waterLiters": 2.4,
+  "notes": "Cal AI via Apple Health"
+}
+```
+
+Tambien acepta alias practicos del Atajo como `dietaryEnergy`, `protein`, `carbs`, `fat`, `fiber`, `sugar` y valores con texto de unidad.
+
+## Apple Health daily recovery bridge
+
+```text
+POST /api/v1/integrations/apple-health/daily-recovery
+```
+
+Header obligatorio:
+
+```text
+X-PulseBoard-Bridge-Key: <server bridge key>
+```
+
+Body esperado:
+
+```json
+{
+  "localDate": "2026-07-28",
+  "heartRateBpm": 59,
+  "restingHeartRateBpm": 60,
+  "heartRateVariabilityMs": 26,
+  "bloodOxygenPercentage": 95,
+  "respiratoryRateBreathsPerMinute": 18,
+  "sleepHours": 6.8,
+  "sleepScore": 80,
+  "vo2Max": 39.3,
+  "walkingHeartRateAverageBpm": 83,
+  "notes": "Apple Health via Shortcuts"
+}
+```
+
+Tambien acepta alias practicos como `heartRate`, `restingHeartRate`, `hrv`, `bloodOxygen`, `respiratoryRate`, `timeAsleepHours`, `cardioFitness` y `walkingHeartRateAverage`.
