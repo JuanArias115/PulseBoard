@@ -13,6 +13,9 @@ Docker en servidor: disponible
 Docker Desktop local: disponible despues de arrancarlo
 SDK .NET local: 3.1.426, las pruebas de API se validaron con Docker y SDK .NET 8
 GitHub Secrets: DEPLOY_HOST, DEPLOY_PORT, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS, GHCR_USERNAME configurados
+Produccion web: https://pulseboard.juanariasdev.com
+Produccion API: https://api.pulseboard.juanariasdev.com/health
+Certificado Let's Encrypt: emitido para pulseboard.juanariasdev.com y api.pulseboard.juanariasdev.com
 ```
 
 ## Antes del primer deploy
@@ -42,6 +45,8 @@ ssh -i ~/.ssh/bakeryflow_deploy juan@217.216.92.208 \
 
 Este paso requiere `sudo` en el servidor. El usuario `juan` pertenece a `sudo`, pero no tiene `sudo` sin password.
 
+Estado: completado.
+
 5. Configurar Nginx con:
 
 ```text
@@ -51,12 +56,16 @@ deploy/nginx/delicias-proxy-pulseboard.conf
 El servidor publica 80/443 desde el contenedor `deliciasbakery-web-1`, definido en `/opt/deliciasBakery`.
 Para que ese proxy resuelva `pulseboard-web` y `pulseboard-api`, hay que conectar el proxy a la red Docker `pulseboard_ingress`.
 
+Estado: completado mediante `deploy/scripts/configure-public-proxy.sh`.
+
 6. Emitir certificados Let's Encrypt para:
 
 ```text
 pulseboard.juanariasdev.com
 api.pulseboard.juanariasdev.com
 ```
+
+Estado: completado. El certificado vence el 2026-10-26.
 
 ## GitHub Secrets requeridos
 
