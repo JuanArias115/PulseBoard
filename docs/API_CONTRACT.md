@@ -16,6 +16,34 @@ https://api.pulseboard.juanariasdev.com/api/v1
 
 Devuelve nombre, estado, idiomas, zona horaria y modulos disponibles.
 
+## GET /dashboard
+
+```text
+GET /api/v1/dashboard
+```
+
+Devuelve el resumen principal de PulseBoard:
+
+- estado del dia;
+- score de preparacion;
+- habitos completados hoy;
+- constancia de 7 dias;
+- ultima medicion corporal;
+- tendencias de peso, grasa, musculo y agua;
+- promedios de 7, 14 y 30 dias;
+- observaciones automaticas en espanol e ingles.
+
+Las tendencias posibles son:
+
+```text
+insufficient
+stable
+down
+up
+```
+
+La composicion corporal se interpreta como tendencia, no como veredicto exacto de grasa o musculo perdido.
+
 ## POST /check-ins
 
 ```json

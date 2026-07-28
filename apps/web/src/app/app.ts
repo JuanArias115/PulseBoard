@@ -65,8 +65,68 @@ interface BodyMeasurement {
   source: string;
 }
 
+interface DashboardSummary {
+  generatedAtUtc: string;
+  localDate: string;
+  timeZoneId: string;
+  readinessScore: number;
+  today: {
+    sleepHours?: number;
+    energy?: number;
+    recovery?: number;
+    completedHabits: number;
+    totalHabits: number;
+  };
+  habits: {
+    active: number;
+    completedToday: number;
+    completionRate7Days: number;
+    streakDays: number;
+  };
+  body: {
+    latest?: BodyMeasurement;
+    trends: TrendMetric[];
+    history: BodyHistoryPoint[];
+  };
+  insights: Insight[];
+}
+
+interface TrendMetric {
+  key: string;
+  labelEs: string;
+  labelEn: string;
+  unit: string;
+  latest?: number;
+  average7?: number;
+  average14?: number;
+  average30?: number;
+  change30?: number;
+  trend: string;
+  trendEs: string;
+  trendEn: string;
+  dataPoints: number;
+}
+
+interface BodyHistoryPoint {
+  localDate: string;
+  weightKg: number;
+  bodyFatPercentage?: number;
+  musclePercentage?: number;
+  bodyWaterPercentage?: number;
+}
+
+interface Insight {
+  category: string;
+  severity: string;
+  messageEs: string;
+  messageEn: string;
+}
+
 const translations = {
   es: {
+    average14: 'Prom. 14 dias',
+    average30: 'Prom. 30 dias',
+    average7: 'Prom. 7 dias',
     apiOffline: 'API sin conexion',
     apiOnline: 'API conectada',
     body: 'Composicion',
@@ -76,6 +136,7 @@ const translations = {
     completed: 'Completado',
     createHabit: 'Crear habito',
     data: 'Datos',
+    dataQuality: 'Calidad de datos',
     date: 'Fecha',
     energy: 'Energia',
     estimatedCalories: 'Calorias estimadas',
@@ -85,16 +146,21 @@ const translations = {
     habits: 'Habitos',
     hunger: 'Hambre',
     language: 'Idioma',
+    insight: 'Observaciones',
+    latest: 'Actual',
     latestBody: 'Ultima medicion',
     mood: 'Animo',
     muscle: 'Musculo',
     newHabit: 'Nuevo habito',
+    noTrend: 'Sin tendencia',
     note: 'Nota',
     quickCheckIn: 'Check-in diario',
+    readiness: 'Preparacion',
     recovery: 'Recuperacion',
     refresh: 'Actualizar',
     save: 'Guardar',
     saveMeasurement: 'Guardar medicion',
+    sevenDays: '7 dias',
     sleep: 'Sueno',
     sleepHours: 'Horas de sueno',
     sleepQuality: 'Calidad de sueno',
@@ -104,10 +170,15 @@ const translations = {
     stress: 'Estres',
     timezone: 'Zona horaria',
     today: 'Hoy',
+    trend: 'Tendencia',
+    trends: 'Tendencias',
     water: 'Agua',
     weight: 'Peso',
   },
   en: {
+    average14: '14 day avg',
+    average30: '30 day avg',
+    average7: '7 day avg',
     apiOffline: 'API offline',
     apiOnline: 'API connected',
     body: 'Body',
@@ -117,6 +188,7 @@ const translations = {
     completed: 'Completed',
     createHabit: 'Create habit',
     data: 'Data',
+    dataQuality: 'Data quality',
     date: 'Date',
     energy: 'Energy',
     estimatedCalories: 'Estimated calories',
@@ -126,16 +198,21 @@ const translations = {
     habits: 'Habits',
     hunger: 'Hunger',
     language: 'Language',
+    insight: 'Insights',
+    latest: 'Current',
     latestBody: 'Latest measurement',
     mood: 'Mood',
     muscle: 'Muscle',
     newHabit: 'New habit',
+    noTrend: 'No trend',
     note: 'Note',
     quickCheckIn: 'Daily check-in',
+    readiness: 'Readiness',
     recovery: 'Recovery',
     refresh: 'Refresh',
     save: 'Save',
     saveMeasurement: 'Save measurement',
+    sevenDays: '7 days',
     sleep: 'Sleep',
     sleepHours: 'Sleep hours',
     sleepQuality: 'Sleep quality',
@@ -145,6 +222,8 @@ const translations = {
     stress: 'Stress',
     timezone: 'Time zone',
     today: 'Today',
+    trend: 'Trend',
+    trends: 'Trends',
     water: 'Water',
     weight: 'Weight',
   },
@@ -183,6 +262,7 @@ export class App {
   readonly completions = signal<HabitCompletion[]>([]);
   readonly checkIns = signal<CheckIn[]>([]);
   readonly measurements = signal<BodyMeasurement[]>([]);
+  readonly dashboardSummary = signal<DashboardSummary | null>(null);
   readonly message = signal('');
 
   readonly completedHabitIds = computed(
@@ -192,16 +272,51 @@ export class App {
   readonly latestMeasurement = computed(() => this.measurements()[0]);
 
   readonly dashboard = computed(() => {
+    const summary = this.dashboardSummary();
     const latestCheckIn = this.checkIns()[0];
-    const completed = this.completions().length;
-    const total = this.habits().length;
+    const completed = summary?.today.completedHabits ?? this.completions().length;
+    const total = summary?.today.totalHabits ?? this.habits().length;
 
     return {
-      sleep: latestCheckIn ? `${latestCheckIn.sleepHours} h` : '-',
-      energy: latestCheckIn ? `${latestCheckIn.energy}/5` : '-',
-      recovery: latestCheckIn ? `${latestCheckIn.recovery}/5` : '-',
+      score: summary ? `${summary.readinessScore}` : '-',
+      sleep: summary?.today.sleepHours
+        ? `${summary.today.sleepHours} h`
+        : latestCheckIn
+          ? `${latestCheckIn.sleepHours} h`
+          : '-',
+      energy: summary?.today.energy
+        ? `${summary.today.energy}/5`
+        : latestCheckIn
+          ? `${latestCheckIn.energy}/5`
+          : '-',
+      recovery: summary?.today.recovery
+        ? `${summary.today.recovery}/5`
+        : latestCheckIn
+          ? `${latestCheckIn.recovery}/5`
+          : '-',
       habits: total > 0 ? `${completed}/${total}` : '0',
     };
+  });
+
+  readonly bodyTrends = computed(() => this.dashboardSummary()?.body.trends ?? []);
+  readonly insights = computed(() => this.dashboardSummary()?.insights ?? []);
+
+  readonly weightChart = computed(() => {
+    const points = this.dashboardSummary()?.body.history ?? [];
+    if (points.length === 0) {
+      return [];
+    }
+
+    const weights = points.map((point) => point.weightKg);
+    const min = Math.min(...weights);
+    const max = Math.max(...weights);
+    const range = Math.max(max - min, 0.1);
+
+    return points.slice(-14).map((point) => ({
+      label: point.localDate.slice(5),
+      value: point.weightKg,
+      height: Math.round(((point.weightKg - min) / range) * 64) + 18,
+    }));
   });
 
   checkInForm = {
@@ -258,6 +373,7 @@ export class App {
     this.apiStatus.set('checking');
     forkJoin({
       meta: this.http.get<ApiMeta>('/api/v1/meta'),
+      dashboard: this.http.get<DashboardSummary>('/api/v1/dashboard'),
       habits: this.http.get<Habit[]>('/api/v1/habits'),
       completions: this.http.get<HabitCompletion[]>(
         `/api/v1/habit-completions?localDate=${this.checkInForm.localDate}`,
@@ -265,8 +381,9 @@ export class App {
       checkIns: this.http.get<CheckIn[]>('/api/v1/check-ins?limit=7'),
       measurements: this.http.get<BodyMeasurement[]>('/api/v1/body-measurements?limit=7'),
     }).subscribe({
-      next: ({ meta, habits, completions, checkIns, measurements }) => {
+      next: ({ meta, dashboard, habits, completions, checkIns, measurements }) => {
         this.meta.set(meta);
+        this.dashboardSummary.set(dashboard);
         this.habits.set(habits);
         this.completions.set(completions);
         this.checkIns.set(checkIns);
@@ -275,6 +392,18 @@ export class App {
       },
       error: () => this.apiStatus.set('offline'),
     });
+  }
+
+  trendLabel(trend: TrendMetric): string {
+    return this.language() === 'es' ? trend.trendEs : trend.trendEn;
+  }
+
+  metricLabel(trend: TrendMetric): string {
+    return this.language() === 'es' ? trend.labelEs : trend.labelEn;
+  }
+
+  insightMessage(insight: Insight): string {
+    return this.language() === 'es' ? insight.messageEs : insight.messageEn;
   }
 
   saveCheckIn(): void {

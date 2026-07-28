@@ -47,6 +47,69 @@ public sealed class ApiSmokeTests
     }
 
     [Fact]
+    public async Task Dashboard_Returns_Trends_And_Vienna_Timezone()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+
+        await client.PostAsJsonAsync("/api/v1/body-measurements", new
+        {
+            measuredAt = DateTimeOffset.UtcNow.AddDays(-2),
+            weightKg = 74.8m,
+            bodyFatPercentage = 20.1m,
+            musclePercentage = 42.0m,
+            bodyWaterPercentage = 55.0m,
+            bodyMassIndex = 23.6m,
+            estimatedCaloriesKcal = 3087,
+            notes = "Trend point"
+        });
+        await client.PostAsJsonAsync("/api/v1/body-measurements", new
+        {
+            measuredAt = DateTimeOffset.UtcNow.AddDays(-1),
+            weightKg = 74.4m,
+            bodyFatPercentage = 19.9m,
+            musclePercentage = 42.1m,
+            bodyWaterPercentage = 55.1m,
+            bodyMassIndex = 23.5m,
+            estimatedCaloriesKcal = 3087,
+            notes = "Trend point"
+        });
+        await client.PostAsJsonAsync("/api/v1/body-measurements", new
+        {
+            measuredAt = DateTimeOffset.UtcNow,
+            weightKg = 74.2m,
+            bodyFatPercentage = 19.8m,
+            musclePercentage = 42.1m,
+            bodyWaterPercentage = 55.1m,
+            bodyMassIndex = 23.4m,
+            estimatedCaloriesKcal = 3087,
+            notes = "Trend point"
+        });
+
+        var response = await client.GetAsync("/api/v1/dashboard");
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Europe/Vienna", body.GetProperty("timeZoneId").GetString());
+        Assert.True(body.GetProperty("body").GetProperty("trends").GetArrayLength() >= 4);
+        Assert.True(body.GetProperty("body").GetProperty("history").GetArrayLength() >= 3);
+    }
+
+    [Fact]
+    public async Task Dashboard_Works_With_No_Data()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+
+        var response = await client.GetAsync("/api/v1/dashboard");
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(0, body.GetProperty("readinessScore").GetInt32());
+        Assert.True(body.GetProperty("insights").GetArrayLength() > 0);
+    }
+
+    [Fact]
     public async Task AppleHealthBridge_Requires_Key()
     {
         using var application = CreateApplication();

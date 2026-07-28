@@ -30,6 +30,38 @@ describe('App', () => {
       units: 'metric',
       modules: [],
     });
+    http.expectOne('/api/v1/dashboard').flush({
+      generatedAtUtc: '2026-07-28T11:00:00Z',
+      localDate: '2026-07-28',
+      timeZoneId: 'Europe/Vienna',
+      readinessScore: 72,
+      today: {
+        sleepHours: 7.5,
+        energy: 4,
+        recovery: 4,
+        completedHabits: 1,
+        totalHabits: 2,
+      },
+      habits: {
+        active: 2,
+        completedToday: 1,
+        completionRate7Days: 50,
+        streakDays: 1,
+      },
+      body: {
+        latest: null,
+        trends: [],
+        history: [],
+      },
+      insights: [
+        {
+          category: 'data',
+          severity: 'info',
+          messageEs: 'Aun faltan datos.',
+          messageEn: 'More data is needed.',
+        },
+      ],
+    });
     http.expectOne('/api/v1/habits').flush([]);
     http.expectOne((request) => request.url.startsWith('/api/v1/habit-completions')).flush([]);
     http.expectOne('/api/v1/check-ins?limit=7').flush([]);

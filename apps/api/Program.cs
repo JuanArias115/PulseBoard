@@ -109,6 +109,88 @@ api.MapGet("/meta", (IConfiguration configuration) =>
     });
 });
 
+api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configuration) =>
+{
+    var options = configuration.GetSection(PulseBoardOptions.SectionName).Get<PulseBoardOptions>()
+        ?? new PulseBoardOptions();
+    var nowUtc = DateTimeOffset.UtcNow;
+    var localToday = GetLocalDate(nowUtc, options.TimeZoneId);
+    var recentDates = Enumerable.Range(0, 7)
+        .Select(offset => localToday.AddDays(-offset).ToString("O"))
+        .ToArray();
+
+    var checkIns = await db.CheckIns
+        .OrderByDescending(checkIn => checkIn.LocalDate)
+        .Take(14)
+        .ToListAsync();
+
+    var habits = await db.Habits
+        .Where(habit => habit.IsActive)
+        .OrderBy(habit => habit.Name)
+        .ToListAsync();
+
+    var completions = await db.HabitCompletions
+        .Where(completion => recentDates.Contains(completion.LocalDate))
+        .ToListAsync();
+
+    var measurements = await db.BodyMeasurements
+        .Where(measurement => measurement.MeasuredAtUtc >= nowUtc.AddDays(-90))
+        .OrderByDescending(measurement => measurement.MeasuredAtUtc)
+        .Take(120)
+        .ToListAsync();
+
+    var todayCheckIn = checkIns.FirstOrDefault(checkIn => checkIn.LocalDate == localToday.ToString("O"));
+    var latestCheckIn = todayCheckIn ?? checkIns.FirstOrDefault();
+    var latestMeasurement = measurements.FirstOrDefault();
+    var completionsToday = completions.Count(completion => completion.LocalDate == localToday.ToString("O"));
+    var habitsExpectedLast7Days = habits.Count * recentDates.Length;
+    var completionRate = habitsExpectedLast7Days == 0
+        ? 0
+        : Math.Round((decimal)completions.Count / habitsExpectedLast7Days * 100, 0);
+
+    var bodyTrends = new[]
+    {
+        BuildTrend("weight", "Peso", "Weight", "kg", measurements, measurement => measurement.WeightKg, nowUtc),
+        BuildTrend("bodyFat", "Grasa", "Body fat", "%", measurements, measurement => measurement.BodyFatPercentage, nowUtc),
+        BuildTrend("muscle", "Musculo", "Muscle", "%", measurements, measurement => measurement.MusclePercentage, nowUtc),
+        BuildTrend("water", "Agua", "Water", "%", measurements, measurement => measurement.BodyWaterPercentage, nowUtc)
+    };
+
+    var readinessScore = BuildReadinessScore(latestCheckIn, habits.Count, completionsToday);
+    var insights = BuildInsights(checkIns, measurements, completionRate, bodyTrends);
+
+    return Results.Ok(new DashboardResponse(
+        GeneratedAtUtc: nowUtc,
+        LocalDate: localToday.ToString("O"),
+        TimeZoneId: options.TimeZoneId,
+        ReadinessScore: readinessScore,
+        Today: new TodaySummary(
+            SleepHours: latestCheckIn?.SleepHours,
+            Energy: latestCheckIn?.Energy,
+            Recovery: latestCheckIn?.Recovery,
+            CompletedHabits: completionsToday,
+            TotalHabits: habits.Count),
+        Habits: new HabitSummary(
+            Active: habits.Count,
+            CompletedToday: completionsToday,
+            CompletionRate7Days: completionRate,
+            StreakDays: BuildHabitStreak(recentDates, habits.Count, completions)),
+        Body: new BodyDashboard(
+            Latest: latestMeasurement,
+            Trends: bodyTrends,
+            History: measurements
+                .OrderBy(measurement => measurement.MeasuredAtUtc)
+                .TakeLast(30)
+                .Select(measurement => new BodyHistoryPoint(
+                    LocalDate: GetLocalDate(measurement.MeasuredAtUtc, options.TimeZoneId).ToString("O"),
+                    WeightKg: measurement.WeightKg,
+                    BodyFatPercentage: measurement.BodyFatPercentage,
+                    MusclePercentage: measurement.MusclePercentage,
+                    BodyWaterPercentage: measurement.BodyWaterPercentage))
+                .ToArray()),
+        Insights: insights));
+});
+
 api.MapGet("/check-ins", async (PulseBoardDbContext db, int limit = 14) =>
 {
     var safeLimit = Math.Clamp(limit, 1, 90);
@@ -319,6 +401,194 @@ static string[] GetSupportedLanguages(PulseBoardOptions options)
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
+static TrendMetric BuildTrend(
+    string key,
+    string labelEs,
+    string labelEn,
+    string unit,
+    IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements,
+    Func<PulseBoard.Api.Models.BodyMeasurement, decimal?> selector,
+    DateTimeOffset nowUtc)
+{
+    var points = measurements
+        .Select(measurement => new MeasurementPoint(measurement.MeasuredAtUtc, selector(measurement)))
+        .Where(point => point.Value is not null)
+        .OrderByDescending(point => point.MeasuredAtUtc)
+        .ToArray();
+
+    var latest = points.FirstOrDefault()?.Value;
+    var average7 = AverageSince(points, nowUtc.AddDays(-7));
+    var average14 = AverageSince(points, nowUtc.AddDays(-14));
+    var average30 = AverageSince(points, nowUtc.AddDays(-30));
+    var oldest30 = points
+        .Where(point => point.MeasuredAtUtc >= nowUtc.AddDays(-30))
+        .OrderBy(point => point.MeasuredAtUtc)
+        .FirstOrDefault()
+        ?.Value;
+    decimal? latestRounded = latest.HasValue ? Round(latest.Value) : null;
+    decimal? change30 = latest.HasValue && oldest30.HasValue ? Round(latest.Value - oldest30.Value) : null;
+    var recentPointCount = points.Count(point => point.MeasuredAtUtc >= nowUtc.AddDays(-30));
+    var trend = ResolveTrend(change30, unit, recentPointCount);
+
+    return new TrendMetric(
+        Key: key,
+        LabelEs: labelEs,
+        LabelEn: labelEn,
+        Unit: unit,
+        Latest: latestRounded,
+        Average7: average7,
+        Average14: average14,
+        Average30: average30,
+        Change30: change30,
+        Trend: trend.Code,
+        TrendEs: trend.Es,
+        TrendEn: trend.En,
+        DataPoints: points.Length);
+}
+
+static decimal? AverageSince(IEnumerable<MeasurementPoint> points, DateTimeOffset sinceUtc)
+{
+    var values = points
+        .Where(point => point.MeasuredAtUtc >= sinceUtc)
+        .Select(point => point.Value!.Value)
+        .ToArray();
+
+    return values.Length == 0 ? null : Round(values.Average());
+}
+
+static (string Code, string Es, string En) ResolveTrend(decimal? change, string unit, int recentPoints)
+{
+    if (recentPoints < 3 || change is null)
+    {
+        return ("insufficient", "Informacion insuficiente", "Insufficient data");
+    }
+
+    var threshold = unit == "kg" ? 0.3m : 0.5m;
+    if (Math.Abs(change.Value) <= threshold)
+    {
+        return ("stable", "Estable", "Stable");
+    }
+
+    return change.Value < 0
+        ? ("down", "Bajando gradualmente", "Gradually decreasing")
+        : ("up", "Subiendo gradualmente", "Gradually increasing");
+}
+
+static decimal Round(decimal value) => Math.Round(value, 1, MidpointRounding.AwayFromZero);
+
+static int BuildReadinessScore(PulseBoard.Api.Models.CheckIn? checkIn, int totalHabits, int completedHabits)
+{
+    if (checkIn is null)
+    {
+        return 0;
+    }
+
+    var habitScore = totalHabits == 0 ? 75 : (int)Math.Round((decimal)completedHabits / totalHabits * 100, 0);
+    var checkInScore = (checkIn.Energy + checkIn.Mood + checkIn.Recovery + (6 - checkIn.Fatigue)) / 4m * 20m;
+    var sleepScore = Math.Clamp(checkIn.SleepHours / 8m * 100m, 0m, 100m);
+
+    return (int)Math.Round(checkInScore * 0.45m + sleepScore * 0.3m + habitScore * 0.25m, 0);
+}
+
+static int BuildHabitStreak(string[] recentDates, int totalHabits, IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions)
+{
+    if (totalHabits == 0)
+    {
+        return 0;
+    }
+
+    var streak = 0;
+    foreach (var date in recentDates)
+    {
+        var completedForDate = completions
+            .Where(completion => completion.LocalDate == date)
+            .Select(completion => completion.HabitId)
+            .Distinct()
+            .Count();
+
+        if (completedForDate == 0)
+        {
+            break;
+        }
+
+        streak++;
+    }
+
+    return streak;
+}
+
+static Insight[] BuildInsights(
+    IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns,
+    IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements,
+    decimal completionRate,
+    IReadOnlyList<TrendMetric> bodyTrends)
+{
+    var insights = new List<Insight>();
+    var weightTrend = bodyTrends.FirstOrDefault(trend => trend.Key == "weight");
+
+    if (weightTrend is null || weightTrend.Trend == "insufficient")
+    {
+        insights.Add(new Insight(
+            Category: "data",
+            Severity: "info",
+            MessageEs: "Aun faltan mediciones corporales para calcular tendencias confiables de 7, 14 y 30 dias.",
+            MessageEn: "More body measurements are needed before 7, 14, and 30 day trends are reliable."));
+    }
+    else
+    {
+        insights.Add(new Insight(
+            Category: "body",
+            Severity: "info",
+            MessageEs: $"La tendencia de peso de 30 dias esta: {weightTrend.TrendEs.ToLowerInvariant()}.",
+            MessageEn: $"The 30 day weight trend is: {weightTrend.TrendEn.ToLowerInvariant()}."));
+    }
+
+    if (completionRate >= 80)
+    {
+        insights.Add(new Insight("habits", "positive", "Tu constancia de habitos de 7 dias esta alta.", "Your 7 day habit consistency is high."));
+    }
+    else if (completionRate > 0)
+    {
+        insights.Add(new Insight("habits", "info", "Hay margen para subir la constancia semanal de habitos.", "There is room to improve weekly habit consistency."));
+    }
+
+    if (checkIns.Count >= 3)
+    {
+        var averageSleep = checkIns.Take(7).Average(checkIn => checkIn.SleepHours);
+        var averageEnergy = checkIns.Take(7).Average(checkIn => checkIn.Energy);
+        if (averageSleep < 7 && averageEnergy <= 3)
+        {
+            insights.Add(new Insight(
+                Category: "recovery",
+                Severity: "warning",
+                MessageEs: "El sueno medio reciente esta por debajo de 7 horas y la energia no esta alta.",
+                MessageEn: "Recent average sleep is below 7 hours and energy is not high."));
+        }
+    }
+
+    if (measurements.Count == 0 && checkIns.Count == 0)
+    {
+        insights.Add(new Insight("data", "info", "Empieza registrando un check-in y una medicion Soehnle.", "Start by logging one check-in and one Soehnle measurement."));
+    }
+
+    return insights.Take(4).ToArray();
+}
+
+static DateOnly GetLocalDate(DateTimeOffset utcDateTime, string timeZoneId)
+{
+    TimeZoneInfo timeZone;
+    try
+    {
+        timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+    }
+    catch (TimeZoneNotFoundException)
+    {
+        timeZone = TimeZoneInfo.Utc;
+    }
+
+    return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcDateTime, timeZone).DateTime);
+}
+
 static async Task EnsureDatabaseAsync(PulseBoardDbContext db)
 {
     await db.Database.EnsureCreatedAsync();
@@ -355,3 +625,61 @@ static async Task EnsureDatabaseAsync(PulseBoardDbContext db)
 }
 
 public partial class Program;
+
+public sealed record DashboardResponse(
+    DateTimeOffset GeneratedAtUtc,
+    string LocalDate,
+    string TimeZoneId,
+    int ReadinessScore,
+    TodaySummary Today,
+    HabitSummary Habits,
+    BodyDashboard Body,
+    Insight[] Insights);
+
+public sealed record TodaySummary(
+    decimal? SleepHours,
+    int? Energy,
+    int? Recovery,
+    int CompletedHabits,
+    int TotalHabits);
+
+public sealed record HabitSummary(
+    int Active,
+    int CompletedToday,
+    decimal CompletionRate7Days,
+    int StreakDays);
+
+public sealed record BodyDashboard(
+    PulseBoard.Api.Models.BodyMeasurement? Latest,
+    TrendMetric[] Trends,
+    BodyHistoryPoint[] History);
+
+public sealed record TrendMetric(
+    string Key,
+    string LabelEs,
+    string LabelEn,
+    string Unit,
+    decimal? Latest,
+    decimal? Average7,
+    decimal? Average14,
+    decimal? Average30,
+    decimal? Change30,
+    string Trend,
+    string TrendEs,
+    string TrendEn,
+    int DataPoints);
+
+public sealed record BodyHistoryPoint(
+    string LocalDate,
+    decimal WeightKg,
+    decimal? BodyFatPercentage,
+    decimal? MusclePercentage,
+    decimal? BodyWaterPercentage);
+
+public sealed record Insight(
+    string Category,
+    string Severity,
+    string MessageEs,
+    string MessageEn);
+
+public sealed record MeasurementPoint(DateTimeOffset MeasuredAtUtc, decimal? Value);

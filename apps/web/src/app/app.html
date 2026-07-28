@@ -29,8 +29,8 @@
   <section class="summary-strip">
     <article>
       <span><svg lucideShieldCheck size="20" aria-hidden="true"></svg></span>
-      <p>{{ t('status') }}</p>
-      <strong>{{ statusLabel() }}</strong>
+      <p>{{ t('readiness') }}</p>
+      <strong>{{ dashboard().score }}</strong>
     </article>
     <article>
       <span><svg lucideMoon size="20" aria-hidden="true"></svg></span>
@@ -46,6 +46,80 @@
       <span><svg lucideCheck size="20" aria-hidden="true"></svg></span>
       <p>{{ t('habits') }}</p>
       <strong>{{ dashboard().habits }}</strong>
+    </article>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="panel trend-overview">
+      <div class="panel-heading">
+        <span><svg lucideActivity size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('trends') }}</p>
+          <strong>{{ t('body') }}</strong>
+        </div>
+      </div>
+
+      <div class="trend-cards">
+        @for (trend of bodyTrends(); track trend.key) {
+          <article [attr.data-trend]="trend.trend">
+            <div>
+              <span>{{ metricLabel(trend) }}</span>
+              <strong>{{ formatNumber(trend.latest, trend.unit === 'kg' ? ' kg' : ' %') }}</strong>
+            </div>
+            <p>{{ trendLabel(trend) }}</p>
+            <dl>
+              <div>
+                <dt>{{ t('average7') }}</dt>
+                <dd>{{ formatNumber(trend.average7, trend.unit === 'kg' ? ' kg' : ' %') }}</dd>
+              </div>
+              <div>
+                <dt>{{ t('average30') }}</dt>
+                <dd>{{ formatNumber(trend.average30, trend.unit === 'kg' ? ' kg' : ' %') }}</dd>
+              </div>
+            </dl>
+          </article>
+        } @empty {
+          <p class="empty-state">{{ t('noTrend') }}</p>
+        }
+      </div>
+    </article>
+
+    <article class="panel weight-chart-panel">
+      <div class="panel-heading">
+        <span><svg lucideScale size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('weight') }}</p>
+          <strong>{{ t('sevenDays') }}</strong>
+        </div>
+      </div>
+
+      <div class="mini-chart" aria-hidden="true">
+        @for (point of weightChart(); track point.label + point.value) {
+          <span [style.height.px]="point.height">
+            <i>{{ formatNumber(point.value, '') }}</i>
+          </span>
+        } @empty {
+          <p class="empty-state">{{ t('dataQuality') }}</p>
+        }
+      </div>
+    </article>
+
+    <article class="panel insights-panel">
+      <div class="panel-heading">
+        <span><svg lucideDatabase size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('data') }}</p>
+          <strong>{{ t('insight') }}</strong>
+        </div>
+      </div>
+
+      <div class="insight-list">
+        @for (insight of insights(); track insight.category + insight.messageEs) {
+          <p [attr.data-severity]="insight.severity">{{ insightMessage(insight) }}</p>
+        } @empty {
+          <p class="empty-state">{{ t('dataQuality') }}</p>
+        }
+      </div>
     </article>
   </section>
 
