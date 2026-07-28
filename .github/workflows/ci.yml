@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  workflow_call:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+jobs:
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test -- --watch=false
+
+      - name: Build
+        run: npm run build
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore tests/PulseBoard.Api.Tests/PulseBoard.Api.Tests.csproj
+
+      - name: Test
+        run: dotnet test tests/PulseBoard.Api.Tests/PulseBoard.Api.Tests.csproj --no-restore --configuration Release

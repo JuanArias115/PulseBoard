@@ -1,0 +1,12 @@
+{
+  "name": "pulseboard",
+  "private": true,
+  "scripts": {
+    "web:start": "npm --prefix apps/web start",
+    "web:build": "npm --prefix apps/web run build",
+    "web:test": "npm --prefix apps/web test -- --watch=false",
+    "api:test:docker": "docker run --rm -v \"$PWD:/src\" -w /src mcr.microsoft.com/dotnet/sdk:8.0 dotnet test tests/PulseBoard.Api.Tests/PulseBoard.Api.Tests.csproj",
+    "compose:up": "docker compose --env-file .env up --build",
+    "compose:down": "docker compose --env-file .env down"
+  }
+}

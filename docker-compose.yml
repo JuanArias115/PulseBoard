@@ -1,0 +1,74 @@
+services:
+  pulseboard-db:
+    image: postgres:16-alpine
+    container_name: pulseboard-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PULSEBOARD_POSTGRES_DB}
+      POSTGRES_USER: ${PULSEBOARD_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${PULSEBOARD_POSTGRES_PASSWORD}
+      TZ: ${PULSEBOARD_TIMEZONE:-Europe/Vienna}
+    volumes:
+      - pulseboard-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pulseboard
+
+  pulseboard-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: pulseboard-api
+    restart: unless-stopped
+    depends_on:
+      pulseboard-db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${PULSEBOARD_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: http://+:8080
+      PULSEBOARD_AUTO_MIGRATE: ${PULSEBOARD_AUTO_MIGRATE:-true}
+      PULSEBOARD_CORS_ORIGINS: ${PULSEBOARD_CORS_ORIGINS}
+      PULSEBOARD_POSTGRES_HOST: pulseboard-db
+      PULSEBOARD_POSTGRES_PORT: 5432
+      PULSEBOARD_POSTGRES_DB: ${PULSEBOARD_POSTGRES_DB}
+      PULSEBOARD_POSTGRES_USER: ${PULSEBOARD_POSTGRES_USER}
+      PULSEBOARD_POSTGRES_PASSWORD: ${PULSEBOARD_POSTGRES_PASSWORD}
+      PulseBoard__DefaultLanguage: es
+      PulseBoard__SupportedLanguages__0: es
+      PulseBoard__SupportedLanguages__1: en
+      PulseBoard__TimeZoneId: Europe/Vienna
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - pulseboard
+
+  pulseboard-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: pulseboard-web
+    restart: unless-stopped
+    depends_on:
+      pulseboard-api:
+        condition: service_healthy
+    ports:
+      - "4200:80"
+    networks:
+      - pulseboard
+
+volumes:
+  pulseboard-db-data:
+    name: pulseboard-db-data
+
+networks:
+  pulseboard:
+    name: pulseboard

@@ -1,0 +1,147 @@
+<main class="app-shell">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">
+        <svg lucideHeartPulse size="26" aria-hidden="true"></svg>
+      </span>
+      <div>
+        <strong>PulseBoard</strong>
+        <small>{{ t('timezone') }}: {{ meta()?.timeZoneId || 'Europe/Vienna' }}</small>
+      </div>
+    </div>
+
+    <div class="top-actions" [attr.aria-label]="t('language')">
+      <svg lucideLanguages size="18" aria-hidden="true"></svg>
+      <button type="button" [class.active]="language() === 'es'" (click)="setLanguage('es')">ES</button>
+      <button type="button" [class.active]="language() === 'en'" (click)="setLanguage('en')">EN</button>
+    </div>
+  </header>
+
+  <section class="overview">
+    <div class="overview-copy">
+      <p class="eyebrow">{{ t('readiness') }}</p>
+      <h1>{{ t('headline') }}</h1>
+      <p>{{ t('intro') }}</p>
+    </div>
+
+    <aside class="status-panel" [class.offline]="apiStatus() === 'offline'">
+      <div class="status-icon">
+        @if (apiStatus() === 'online') {
+          <svg lucideShieldCheck size="34" aria-hidden="true"></svg>
+        } @else {
+          <svg lucideServer size="34" aria-hidden="true"></svg>
+        }
+      </div>
+      <span>{{ t('status') }}</span>
+      <strong>{{ statusLabel() }}</strong>
+      <small>{{ t('source') }}: /api/v1/meta</small>
+    </aside>
+  </section>
+
+  <section class="module-grid" [attr.aria-label]="t('next')">
+    @for (module of modules(); track module.label) {
+      <article class="module-card" [attr.data-color]="module.color">
+        <span class="module-icon">
+          @switch (module.icon) {
+            @case ('moon') {
+              <svg lucideMoon size="22" aria-hidden="true"></svg>
+            }
+            @case ('shield') {
+              <svg lucideShieldCheck size="22" aria-hidden="true"></svg>
+            }
+            @case ('scale') {
+              <svg lucideScale size="22" aria-hidden="true"></svg>
+            }
+            @case ('food') {
+              <svg lucideUtensils size="22" aria-hidden="true"></svg>
+            }
+          }
+        </span>
+        <span>{{ module.label }}</span>
+        <strong>{{ module.value }}</strong>
+      </article>
+    }
+  </section>
+
+  <section class="workspace-grid">
+    <article class="panel checkin-panel">
+      <div class="panel-heading">
+        <span>
+          <svg lucideActivity size="22" aria-hidden="true"></svg>
+        </span>
+        <div>
+          <p>{{ t('checkIn') }}</p>
+          <strong>{{ t('recovery') }}</strong>
+        </div>
+      </div>
+      <div class="ring" aria-hidden="true">
+        <span>72</span>
+      </div>
+      <dl class="compact-list">
+        <div>
+          <dt>{{ t('sleep') }}</dt>
+          <dd>7,5 h</dd>
+        </div>
+        <div>
+          <dt>{{ t('mood') }}</dt>
+          <dd>4/5</dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="panel body-panel">
+      <div class="panel-heading">
+        <span>
+          <svg lucideScale size="22" aria-hidden="true"></svg>
+        </span>
+        <div>
+          <p>Soehnle</p>
+          <strong>{{ t('body') }}</strong>
+        </div>
+      </div>
+      <div class="metric-list">
+        @for (metric of bodyMetrics; track metric.key) {
+          <div class="metric-row" [attr.data-color]="metric.color">
+            <span>{{ t(metric.key) }}</span>
+            <strong>{{ metric.value }}</strong>
+          </div>
+        }
+      </div>
+    </article>
+
+    <article class="panel data-panel">
+      <div class="panel-heading">
+        <span>
+          <svg lucideDatabase size="22" aria-hidden="true"></svg>
+        </span>
+        <div>
+          <p>{{ t('data') }}</p>
+          <strong>PostgreSQL</strong>
+        </div>
+      </div>
+      <div class="stacked-bars" aria-hidden="true">
+        <span style="height: 42%"></span>
+        <span style="height: 68%"></span>
+        <span style="height: 52%"></span>
+        <span style="height: 84%"></span>
+        <span style="height: 74%"></span>
+        <span style="height: 92%"></span>
+      </div>
+    </article>
+  </section>
+
+  <footer class="footer-strip">
+    <span>
+      <svg lucideDumbbell size="18" aria-hidden="true"></svg>
+      Strava
+    </span>
+    <span>
+      <svg lucideDroplet size="18" aria-hidden="true"></svg>
+      Soehnle CSV
+    </span>
+    <span>
+      <svg lucideServer size="18" aria-hidden="true"></svg>
+      GHCR
+    </span>
+  </footer>
+</main>
