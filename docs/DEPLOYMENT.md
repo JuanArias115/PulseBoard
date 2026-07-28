@@ -83,6 +83,18 @@ GHCR_READ_TOKEN      token con read:packages si GHCR queda privado
 
 `GITHUB_TOKEN` lo provee GitHub Actions y se usa para publicar imagenes en GHCR.
 
+## Variables solo del servidor
+
+En `/opt/pulseboard/.env` deben existir valores reales para:
+
+```text
+PULSEBOARD_POSTGRES_PASSWORD
+ConnectionStrings__Default
+PULSEBOARD_APPLE_HEALTH_BRIDGE_KEY
+```
+
+`PULSEBOARD_APPLE_HEALTH_BRIDGE_KEY` es la clave privada que usara el Atajo del iPhone para enviar mediciones desde Apple Health. No se expone en el frontend ni en el repositorio.
+
 Despues de crear DNS, servidor y secrets:
 
 ```bash

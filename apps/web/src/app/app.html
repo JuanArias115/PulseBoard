@@ -10,138 +10,310 @@
       </div>
     </div>
 
-    <div class="top-actions" [attr.aria-label]="t('language')">
-      <svg lucideLanguages size="18" aria-hidden="true"></svg>
-      <button type="button" [class.active]="language() === 'es'" (click)="setLanguage('es')">ES</button>
-      <button type="button" [class.active]="language() === 'en'" (click)="setLanguage('en')">EN</button>
+    <div class="top-actions">
+      <button type="button" class="icon-button" [attr.aria-label]="t('refresh')" (click)="load()">
+        <svg lucideRefreshCw size="18" aria-hidden="true"></svg>
+      </button>
+      <div class="language-toggle" [attr.aria-label]="t('language')">
+        <svg lucideLanguages size="18" aria-hidden="true"></svg>
+        <button type="button" [class.active]="language() === 'es'" (click)="setLanguage('es')">
+          ES
+        </button>
+        <button type="button" [class.active]="language() === 'en'" (click)="setLanguage('en')">
+          EN
+        </button>
+      </div>
     </div>
   </header>
 
-  <section class="overview">
-    <div class="overview-copy">
-      <p class="eyebrow">{{ t('readiness') }}</p>
-      <h1>{{ t('headline') }}</h1>
-      <p>{{ t('intro') }}</p>
-    </div>
-
-    <aside class="status-panel" [class.offline]="apiStatus() === 'offline'">
-      <div class="status-icon">
-        @if (apiStatus() === 'online') {
-          <svg lucideShieldCheck size="34" aria-hidden="true"></svg>
-        } @else {
-          <svg lucideServer size="34" aria-hidden="true"></svg>
-        }
-      </div>
-      <span>{{ t('status') }}</span>
+  <section class="summary-strip">
+    <article>
+      <span><svg lucideShieldCheck size="20" aria-hidden="true"></svg></span>
+      <p>{{ t('status') }}</p>
       <strong>{{ statusLabel() }}</strong>
-      <small>{{ t('source') }}: /api/v1/meta</small>
-    </aside>
+    </article>
+    <article>
+      <span><svg lucideMoon size="20" aria-hidden="true"></svg></span>
+      <p>{{ t('sleep') }}</p>
+      <strong>{{ dashboard().sleep }}</strong>
+    </article>
+    <article>
+      <span><svg lucideActivity size="20" aria-hidden="true"></svg></span>
+      <p>{{ t('energy') }}</p>
+      <strong>{{ dashboard().energy }}</strong>
+    </article>
+    <article>
+      <span><svg lucideCheck size="20" aria-hidden="true"></svg></span>
+      <p>{{ t('habits') }}</p>
+      <strong>{{ dashboard().habits }}</strong>
+    </article>
   </section>
 
-  <section class="module-grid" [attr.aria-label]="t('next')">
-    @for (module of modules(); track module.label) {
-      <article class="module-card" [attr.data-color]="module.color">
-        <span class="module-icon">
-          @switch (module.icon) {
-            @case ('moon') {
-              <svg lucideMoon size="22" aria-hidden="true"></svg>
-            }
-            @case ('shield') {
-              <svg lucideShieldCheck size="22" aria-hidden="true"></svg>
-            }
-            @case ('scale') {
-              <svg lucideScale size="22" aria-hidden="true"></svg>
-            }
-            @case ('food') {
-              <svg lucideUtensils size="22" aria-hidden="true"></svg>
-            }
-          }
-        </span>
-        <span>{{ module.label }}</span>
-        <strong>{{ module.value }}</strong>
-      </article>
-    }
-  </section>
+  @if (message()) {
+    <p class="toast">{{ message() }}</p>
+  }
 
   <section class="workspace-grid">
-    <article class="panel checkin-panel">
+    <form class="panel" (ngSubmit)="saveCheckIn()">
       <div class="panel-heading">
-        <span>
-          <svg lucideActivity size="22" aria-hidden="true"></svg>
-        </span>
+        <span><svg lucideMoon size="22" aria-hidden="true"></svg></span>
         <div>
-          <p>{{ t('checkIn') }}</p>
-          <strong>{{ t('recovery') }}</strong>
+          <p>{{ t('today') }}</p>
+          <strong>{{ t('quickCheckIn') }}</strong>
         </div>
       </div>
-      <div class="ring" aria-hidden="true">
-        <span>72</span>
-      </div>
-      <dl class="compact-list">
-        <div>
-          <dt>{{ t('sleep') }}</dt>
-          <dd>7,5 h</dd>
-        </div>
-        <div>
-          <dt>{{ t('mood') }}</dt>
-          <dd>4/5</dd>
-        </div>
-      </dl>
-    </article>
 
-    <article class="panel body-panel">
+      <div class="form-grid two">
+        <label>
+          {{ t('date') }}
+          <input type="date" name="localDate" [(ngModel)]="checkInForm.localDate" />
+        </label>
+        <label>
+          {{ t('sleepHours') }}
+          <input
+            type="number"
+            name="sleepHours"
+            min="0"
+            max="24"
+            step="0.25"
+            [(ngModel)]="checkInForm.sleepHours"
+          />
+        </label>
+      </div>
+
+      <div class="scale-grid">
+        <label>
+          {{ t('sleepQuality') }}
+          <input type="range" name="sleepQuality" min="1" max="5" [(ngModel)]="checkInForm.sleepQuality" />
+          <b>{{ checkInForm.sleepQuality }}/5</b>
+        </label>
+        <label>
+          {{ t('energy') }}
+          <input type="range" name="energy" min="1" max="5" [(ngModel)]="checkInForm.energy" />
+          <b>{{ checkInForm.energy }}/5</b>
+        </label>
+        <label>
+          {{ t('mood') }}
+          <input type="range" name="mood" min="1" max="5" [(ngModel)]="checkInForm.mood" />
+          <b>{{ checkInForm.mood }}/5</b>
+        </label>
+        <label>
+          {{ t('fatigue') }}
+          <input type="range" name="fatigue" min="1" max="5" [(ngModel)]="checkInForm.fatigue" />
+          <b>{{ checkInForm.fatigue }}/5</b>
+        </label>
+        <label>
+          {{ t('soreness') }}
+          <input
+            type="range"
+            name="muscleSoreness"
+            min="1"
+            max="5"
+            [(ngModel)]="checkInForm.muscleSoreness"
+          />
+          <b>{{ checkInForm.muscleSoreness }}/5</b>
+        </label>
+        <label>
+          {{ t('hunger') }}
+          <input type="range" name="hunger" min="1" max="5" [(ngModel)]="checkInForm.hunger" />
+          <b>{{ checkInForm.hunger }}/5</b>
+        </label>
+        <label>
+          {{ t('stress') }}
+          <input type="range" name="stress" min="1" max="5" [(ngModel)]="checkInForm.stress" />
+          <b>{{ checkInForm.stress }}/5</b>
+        </label>
+        <label>
+          {{ t('recovery') }}
+          <input type="range" name="recovery" min="1" max="5" [(ngModel)]="checkInForm.recovery" />
+          <b>{{ checkInForm.recovery }}/5</b>
+        </label>
+      </div>
+
+      <label>
+        {{ t('note') }}
+        <textarea name="checkInNote" rows="3" [(ngModel)]="checkInForm.note"></textarea>
+      </label>
+
+      <button type="submit" class="primary-action">
+        <svg lucideSave size="18" aria-hidden="true"></svg>
+        {{ t('save') }}
+      </button>
+    </form>
+
+    <section class="panel">
       <div class="panel-heading">
-        <span>
-          <svg lucideScale size="22" aria-hidden="true"></svg>
-        </span>
+        <span><svg lucideShieldCheck size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('today') }}</p>
+          <strong>{{ t('habits') }}</strong>
+        </div>
+      </div>
+
+      <form class="inline-form" (ngSubmit)="createHabit()">
+        <input
+          type="text"
+          name="habitName"
+          [placeholder]="t('habitName')"
+          [(ngModel)]="habitForm.name"
+        />
+        <button type="submit" class="icon-button solid" [attr.aria-label]="t('createHabit')">
+          <svg lucidePlus size="18" aria-hidden="true"></svg>
+        </button>
+      </form>
+
+      <div class="habit-list">
+        @for (habit of habits(); track habit.id) {
+          <article>
+            <div>
+              <strong>{{ habit.name }}</strong>
+              <span>{{ habit.frequency }} · {{ habit.category }}</span>
+            </div>
+            @if (completedHabitIds().has(habit.id)) {
+              <button type="button" class="completed" disabled>
+                <svg lucideCheck size="18" aria-hidden="true"></svg>
+                {{ t('completed') }}
+              </button>
+            } @else {
+              <button type="button" (click)="completeHabit(habit)">
+                <svg lucideCheck size="18" aria-hidden="true"></svg>
+                {{ t('complete') }}
+              </button>
+            }
+          </article>
+        } @empty {
+          <p class="empty-state">{{ t('newHabit') }}</p>
+        }
+      </div>
+    </section>
+
+    <form class="panel" (ngSubmit)="saveMeasurement()">
+      <div class="panel-heading">
+        <span><svg lucideScale size="22" aria-hidden="true"></svg></span>
         <div>
           <p>Soehnle</p>
           <strong>{{ t('body') }}</strong>
         </div>
       </div>
-      <div class="metric-list">
-        @for (metric of bodyMetrics; track metric.key) {
-          <div class="metric-row" [attr.data-color]="metric.color">
-            <span>{{ t(metric.key) }}</span>
-            <strong>{{ metric.value }}</strong>
-          </div>
-        }
-      </div>
-    </article>
 
-    <article class="panel data-panel">
-      <div class="panel-heading">
-        <span>
-          <svg lucideDatabase size="22" aria-hidden="true"></svg>
-        </span>
-        <div>
-          <p>{{ t('data') }}</p>
-          <strong>PostgreSQL</strong>
-        </div>
+      <div class="form-grid two">
+        <label>
+          {{ t('date') }}
+          <input type="datetime-local" name="measuredAt" [(ngModel)]="measurementForm.measuredAt" />
+        </label>
+        <label>
+          {{ t('weight') }}
+          <input type="number" name="weightKg" min="20" max="300" step="0.1" [(ngModel)]="measurementForm.weightKg" />
+        </label>
+        <label>
+          {{ t('body') }} %
+          <input
+            type="number"
+            name="bodyFatPercentage"
+            min="1"
+            max="80"
+            step="0.1"
+            [(ngModel)]="measurementForm.bodyFatPercentage"
+          />
+        </label>
+        <label>
+          {{ t('muscle') }} %
+          <input
+            type="number"
+            name="musclePercentage"
+            min="1"
+            max="90"
+            step="0.1"
+            [(ngModel)]="measurementForm.musclePercentage"
+          />
+        </label>
+        <label>
+          {{ t('water') }} %
+          <input
+            type="number"
+            name="bodyWaterPercentage"
+            min="20"
+            max="80"
+            step="0.1"
+            [(ngModel)]="measurementForm.bodyWaterPercentage"
+          />
+        </label>
+        <label>
+          BMI
+          <input
+            type="number"
+            name="bodyMassIndex"
+            min="10"
+            max="80"
+            step="0.1"
+            [(ngModel)]="measurementForm.bodyMassIndex"
+          />
+        </label>
+        <label>
+          {{ t('estimatedCalories') }}
+          <input
+            type="number"
+            name="estimatedCaloriesKcal"
+            min="500"
+            max="8000"
+            step="1"
+            [(ngModel)]="measurementForm.estimatedCaloriesKcal"
+          />
+        </label>
       </div>
-      <div class="stacked-bars" aria-hidden="true">
-        <span style="height: 42%"></span>
-        <span style="height: 68%"></span>
-        <span style="height: 52%"></span>
-        <span style="height: 84%"></span>
-        <span style="height: 74%"></span>
-        <span style="height: 92%"></span>
-      </div>
-    </article>
+
+      <button type="submit" class="primary-action">
+        <svg lucideSave size="18" aria-hidden="true"></svg>
+        {{ t('saveMeasurement') }}
+      </button>
+    </form>
   </section>
 
-  <footer class="footer-strip">
-    <span>
-      <svg lucideDumbbell size="18" aria-hidden="true"></svg>
-      Strava
-    </span>
-    <span>
-      <svg lucideDroplet size="18" aria-hidden="true"></svg>
-      Soehnle CSV
-    </span>
-    <span>
-      <svg lucideServer size="18" aria-hidden="true"></svg>
-      GHCR
-    </span>
-  </footer>
+  <section class="history-grid">
+    <article class="panel compact-panel">
+      <div class="panel-heading">
+        <span><svg lucideDatabase size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>{{ t('data') }}</p>
+          <strong>{{ t('latestBody') }}</strong>
+        </div>
+      </div>
+      @if (latestMeasurement(); as measurement) {
+        <dl class="metric-list">
+          <div>
+            <dt>{{ t('weight') }}</dt>
+            <dd>{{ formatNumber(measurement.weightKg, ' kg') }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('body') }}</dt>
+            <dd>{{ formatNumber(measurement.bodyFatPercentage, ' %') }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('muscle') }}</dt>
+            <dd>{{ formatNumber(measurement.musclePercentage, ' %') }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('water') }}</dt>
+            <dd>{{ formatNumber(measurement.bodyWaterPercentage, ' %') }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('calories') }}</dt>
+            <dd>{{ formatNumber(measurement.estimatedCaloriesKcal, ' kcal') }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('source') }}</dt>
+            <dd>{{ measurement.source }}</dd>
+          </div>
+        </dl>
+      } @else {
+        <p class="empty-state">Soehnle</p>
+      }
+    </article>
+
+    <article class="integration-strip">
+      <span><svg lucideDumbbell size="18" aria-hidden="true"></svg> Strava</span>
+      <span><svg lucideDroplet size="18" aria-hidden="true"></svg> Apple Health bridge</span>
+      <span><svg lucideUtensils size="18" aria-hidden="true"></svg> {{ t('food') }}</span>
+    </article>
+  </section>
 </main>

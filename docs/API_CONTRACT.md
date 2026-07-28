@@ -61,3 +61,27 @@ Devuelve nombre, estado, idiomas, zona horaria y modulos disponibles.
   "notes": "Soehnle manual entry"
 }
 ```
+
+## GET /body-measurements
+
+```text
+GET /api/v1/body-measurements?limit=30
+```
+
+Devuelve las ultimas mediciones, ordenadas desde la mas reciente.
+
+## Apple Health bridge
+
+```text
+POST /api/v1/integrations/apple-health/body-measurements
+```
+
+Usa el mismo cuerpo de `POST /body-measurements`, pero guarda `source` como `AppleHealth`.
+
+Header obligatorio:
+
+```text
+X-PulseBoard-Bridge-Key: <server bridge key>
+```
+
+Este endpoint esta pensado para un Atajo de iPhone o una app iOS puente. La clave vive solo en `/opt/pulseboard/.env`; no debe estar en GitHub, Angular ni documentacion publica.

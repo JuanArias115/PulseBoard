@@ -9,6 +9,8 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
 
     public DbSet<Habit> Habits => Set<Habit>();
 
+    public DbSet<HabitCompletion> HabitCompletions => Set<HabitCompletion>();
+
     public DbSet<BodyMeasurement> BodyMeasurements => Set<BodyMeasurement>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -32,6 +34,21 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
             entity.Property(habit => habit.Frequency).HasMaxLength(40).IsRequired();
             entity.Property(habit => habit.Unit).HasMaxLength(40);
             entity.Property(habit => habit.Notes).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<HabitCompletion>(entity =>
+        {
+            entity.HasKey(completion => completion.Id);
+            entity.Property(completion => completion.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(completion => completion.LocalDate).HasMaxLength(10).IsRequired();
+            entity.Property(completion => completion.TimeZoneId).HasMaxLength(80).IsRequired();
+            entity.Property(completion => completion.Notes).HasMaxLength(1000);
+            entity.Property(completion => completion.Amount).HasPrecision(8, 2);
+            entity.HasOne(completion => completion.Habit)
+                .WithMany()
+                .HasForeignKey(completion => completion.HabitId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(completion => new { completion.UserId, completion.HabitId, completion.LocalDate }).IsUnique();
         });
 
         modelBuilder.Entity<BodyMeasurement>(entity =>

@@ -30,7 +30,7 @@ public sealed record CreateBodyMeasurementRequest(
         return errors;
     }
 
-    public BodyMeasurement ToEntity() => new()
+    public BodyMeasurement ToEntity(string source = "SoehnleManual") => new()
     {
         MeasuredAtUtc = MeasuredAt.ToUniversalTime(),
         WeightKg = WeightKg,
@@ -39,6 +39,7 @@ public sealed record CreateBodyMeasurementRequest(
         BodyWaterPercentage = BodyWaterPercentage,
         BodyMassIndex = BodyMassIndex,
         EstimatedCaloriesKcal = EstimatedCaloriesKcal,
+        Source = source,
         Notes = Notes
     };
 

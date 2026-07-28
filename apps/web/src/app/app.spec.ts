@@ -17,7 +17,7 @@ describe('App', () => {
     expect(app).toBeTruthy();
   });
 
-  it('should render PulseBoard headline', async () => {
+  it('should render PulseBoard workspace', async () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
     const http = TestBed.inject(HttpTestingController);
@@ -30,11 +30,15 @@ describe('App', () => {
       units: 'metric',
       modules: [],
     });
+    http.expectOne('/api/v1/habits').flush([]);
+    http.expectOne((request) => request.url.startsWith('/api/v1/habit-completions')).flush([]);
+    http.expectOne('/api/v1/check-ins?limit=7').flush([]);
+    http.expectOne('/api/v1/body-measurements?limit=7').flush([]);
+    fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('h1')?.textContent).toContain(
-      'Panel personal de salud y rendimiento',
-    );
+    expect(compiled.textContent).toContain('PulseBoard');
+    expect(compiled.textContent).toContain('Check-in diario');
     http.verify();
   });
 });
