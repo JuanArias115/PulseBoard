@@ -15,6 +15,8 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
 
     public DbSet<Meal> Meals => Set<Meal>();
 
+    public DbSet<DailyActivity> DailyActivities => Set<DailyActivity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<CheckIn>(entity =>
@@ -82,6 +84,19 @@ public sealed class PulseBoardDbContext(DbContextOptions<PulseBoardDbContext> op
             entity.Property(meal => meal.Notes).HasMaxLength(1000);
             entity.HasIndex(meal => new { meal.UserId, meal.LocalDate });
             entity.HasIndex(meal => new { meal.UserId, meal.IsFavorite });
+        });
+
+        modelBuilder.Entity<DailyActivity>(entity =>
+        {
+            entity.HasKey(activity => activity.Id);
+            entity.Property(activity => activity.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(activity => activity.LocalDate).HasMaxLength(10).IsRequired();
+            entity.Property(activity => activity.TimeZoneId).HasMaxLength(80).IsRequired();
+            entity.Property(activity => activity.Source).HasMaxLength(40).IsRequired();
+            entity.Property(activity => activity.Notes).HasMaxLength(1000);
+            entity.Property(activity => activity.WalkingRunningDistanceKm).HasPrecision(8, 2);
+            entity.Property(activity => activity.CyclingDistanceKm).HasPrecision(8, 2);
+            entity.HasIndex(activity => new { activity.UserId, activity.LocalDate, activity.Source }).IsUnique();
         });
     }
 }

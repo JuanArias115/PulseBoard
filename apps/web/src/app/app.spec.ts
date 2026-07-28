@@ -68,6 +68,26 @@ describe('App', () => {
         loggedDays7: 1,
         latestMeals: [],
       },
+      activity: {
+        today: {
+          steps: 8500,
+          activeEnergyKcal: 420,
+          exerciseMinutes: 35,
+          walkingRunningDistanceKm: 5.2,
+          cyclingDistanceKm: 0,
+          workoutCount: 1,
+        },
+        average7Days: {
+          steps: 8500,
+          activeEnergyKcal: 420,
+          exerciseMinutes: 35,
+          walkingRunningDistanceKm: 5.2,
+          cyclingDistanceKm: 0,
+          workoutCount: 1,
+        },
+        loggedDays7: 1,
+        latestActivities: [],
+      },
       body: {
         latest: null,
         trends: [],
@@ -127,6 +147,7 @@ describe('App', () => {
     http.expectOne('/api/v1/check-ins?limit=7').flush([]);
     http.expectOne('/api/v1/body-measurements?limit=7').flush([]);
     http.expectOne((request) => request.url.startsWith('/api/v1/meals')).flush([]);
+    http.expectOne('/api/v1/daily-activities?limit=7').flush([]);
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;

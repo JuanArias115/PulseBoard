@@ -138,6 +138,11 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
         .OrderByDescending(meal => meal.EatenAtUtc)
         .ToListAsync();
 
+    var dailyActivities = await db.DailyActivities
+        .Where(activity => recentDates.Contains(activity.LocalDate))
+        .OrderByDescending(activity => activity.LocalDate)
+        .ToListAsync();
+
     var measurements = await db.BodyMeasurements
         .Where(measurement => measurement.MeasuredAtUtc >= nowUtc.AddDays(-90))
         .OrderByDescending(measurement => measurement.MeasuredAtUtc)
@@ -181,6 +186,7 @@ api.MapGet("/dashboard", async (PulseBoardDbContext db, IConfiguration configura
             CompletionRate7Days: completionRate,
             StreakDays: BuildHabitStreak(recentDates, habits.Count, completions)),
         Nutrition: BuildNutritionSummary(localToday.ToString("O"), meals),
+        Activity: BuildActivitySummary(localToday.ToString("O"), dailyActivities),
         Body: new BodyDashboard(
             Latest: latestMeasurement,
             Trends: bodyTrends,
@@ -229,6 +235,11 @@ api.MapGet("/analysis", async (PulseBoardDbContext db, IConfiguration configurat
         .OrderByDescending(meal => meal.EatenAtUtc)
         .ToListAsync();
 
+    var dailyActivities = await db.DailyActivities
+        .Where(activity => recentDates7.Contains(activity.LocalDate))
+        .OrderByDescending(activity => activity.LocalDate)
+        .ToListAsync();
+
     var measurements = await db.BodyMeasurements
         .Where(measurement => measurement.MeasuredAtUtc >= nowUtc.AddDays(-90))
         .OrderByDescending(measurement => measurement.MeasuredAtUtc)
@@ -252,6 +263,7 @@ api.MapGet("/analysis", async (PulseBoardDbContext db, IConfiguration configurat
         habits,
         completions,
         meals,
+        dailyActivities,
         measurements,
         bodyTrends));
 });
@@ -470,6 +482,61 @@ api.MapPost("/meals", async (CreateMealRequest request, PulseBoardDbContext db) 
     return Results.Created($"/api/v1/meals/{meal.Id}", meal);
 });
 
+api.MapGet("/daily-activities", async (PulseBoardDbContext db, int limit = 30) =>
+{
+    var safeLimit = Math.Clamp(limit, 1, 180);
+
+    var activities = await db.DailyActivities
+        .OrderByDescending(activity => activity.LocalDate)
+        .ThenByDescending(activity => activity.RecordedAtUtc)
+        .Take(safeLimit)
+        .ToListAsync();
+
+    return Results.Ok(activities);
+});
+
+api.MapGet("/activity-summary", async (PulseBoardDbContext db, IConfiguration configuration, string? localDate = null) =>
+{
+    var options = configuration.GetSection(PulseBoardOptions.SectionName).Get<PulseBoardOptions>()
+        ?? new PulseBoardOptions();
+    var date = string.IsNullOrWhiteSpace(localDate)
+        ? GetLocalDate(DateTimeOffset.UtcNow, options.TimeZoneId).ToString("O")
+        : localDate;
+
+    if (!DateOnly.TryParse(date, out _))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [nameof(localDate)] = ["localDate must be a valid date."]
+        });
+    }
+
+    var selectedDate = DateOnly.Parse(date);
+    var recentDates = Enumerable.Range(0, 7)
+        .Select(offset => selectedDate.AddDays(-offset).ToString("O"))
+        .ToArray();
+
+    var activities = await db.DailyActivities
+        .Where(activity => recentDates.Contains(activity.LocalDate))
+        .OrderByDescending(activity => activity.LocalDate)
+        .ToListAsync();
+
+    return Results.Ok(BuildActivitySummary(date, activities));
+});
+
+api.MapPost("/daily-activities", async (CreateDailyActivityRequest request, PulseBoardDbContext db) =>
+{
+    var errors = request.Validate();
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var activity = await UpsertDailyActivityAsync(db, request.ToEntity());
+
+    return Results.Ok(activity);
+});
+
 api.MapPost("/integrations/apple-health/body-measurements", async (
     CreateAppleHealthBodyMeasurementRequest request,
     HttpRequest httpRequest,
@@ -501,6 +568,37 @@ api.MapPost("/integrations/apple-health/body-measurements", async (
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/v1/body-measurements/{measurement.Id}", measurement);
+});
+
+api.MapPost("/integrations/apple-health/daily-activity", async (
+    CreateAppleHealthDailyActivityRequest request,
+    HttpRequest httpRequest,
+    IConfiguration configuration,
+    PulseBoardDbContext db) =>
+{
+    var bridgeKey = configuration.GetValue<string>("PULSEBOARD_APPLE_HEALTH_BRIDGE_KEY");
+    if (string.IsNullOrWhiteSpace(bridgeKey))
+    {
+        return Results.Problem("Apple Health bridge key is not configured.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    if (!httpRequest.Headers.TryGetValue("X-PulseBoard-Bridge-Key", out var providedKey)
+        || providedKey.Count != 1
+        || !string.Equals(providedKey[0], bridgeKey, StringComparison.Ordinal))
+    {
+        return Results.Unauthorized();
+    }
+
+    var activityRequest = request.ToDailyActivityRequest();
+    var errors = activityRequest.Validate();
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var activity = await UpsertDailyActivityAsync(db, activityRequest.ToEntity("AppleHealth"));
+
+    return Results.Ok(activity);
 });
 
 if (app.Configuration.GetValue<bool>("PULSEBOARD_AUTO_MIGRATE"))
@@ -756,6 +854,45 @@ static NutritionTotals BuildNutritionTotals(IReadOnlyCollection<PulseBoard.Api.M
     FatGrams: Round(meals.Sum(meal => meal.FatGrams)),
     VegetableMeals: meals.Count(meal => meal.HasVegetables));
 
+static ActivitySummary BuildActivitySummary(string localDate, IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> activities)
+{
+    var todayActivities = activities
+        .Where(activity => activity.LocalDate == localDate)
+        .ToArray();
+    var loggedDays = activities
+        .Select(activity => activity.LocalDate)
+        .Distinct()
+        .Count();
+
+    return new ActivitySummary(
+        Today: todayActivities.Length == 0
+            ? new ActivityTotals(0, 0, 0, 0, 0, 0)
+            : BuildActivityTotals(todayActivities),
+        Average7Days: loggedDays == 0
+            ? new ActivityTotals(0, 0, 0, 0, 0, 0)
+            : new ActivityTotals(
+                Steps: Math.Round((decimal)activities.Sum(activity => activity.Steps) / loggedDays, 0),
+                ActiveEnergyKcal: Math.Round((decimal)activities.Sum(activity => activity.ActiveEnergyKcal) / loggedDays, 0),
+                ExerciseMinutes: Math.Round((decimal)activities.Sum(activity => activity.ExerciseMinutes) / loggedDays, 0),
+                WalkingRunningDistanceKm: Round(activities.Sum(activity => activity.WalkingRunningDistanceKm ?? 0) / loggedDays),
+                CyclingDistanceKm: Round(activities.Sum(activity => activity.CyclingDistanceKm ?? 0) / loggedDays),
+                WorkoutCount: Math.Round((decimal)activities.Sum(activity => activity.WorkoutCount) / loggedDays, 1)),
+        LoggedDays7: loggedDays,
+        LatestActivities: activities
+            .OrderByDescending(activity => activity.LocalDate)
+            .ThenByDescending(activity => activity.RecordedAtUtc)
+            .Take(7)
+            .ToArray());
+}
+
+static ActivityTotals BuildActivityTotals(IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> activities) => new(
+    Steps: activities.Sum(activity => activity.Steps),
+    ActiveEnergyKcal: activities.Sum(activity => activity.ActiveEnergyKcal),
+    ExerciseMinutes: activities.Sum(activity => activity.ExerciseMinutes),
+    WalkingRunningDistanceKm: Round(activities.Sum(activity => activity.WalkingRunningDistanceKm ?? 0)),
+    CyclingDistanceKm: Round(activities.Sum(activity => activity.CyclingDistanceKm ?? 0)),
+    WorkoutCount: activities.Sum(activity => activity.WorkoutCount));
+
 static Insight[] BuildNutritionInsights(string localDate, Insight[] currentInsights, IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals)
 {
     var insights = currentInsights.ToList();
@@ -787,29 +924,23 @@ static AnalysisResponse BuildAnalysisSummary(
     IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
     IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
     IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> dailyActivities,
     IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements,
     TrendMetric[] bodyTrends)
 {
+    var activity = BuildActivityComponent(dailyActivities);
     var recovery = BuildRecoveryComponent(checkIns);
     var nutrition = BuildNutritionComponent(meals);
     var consistency = BuildConsistencyComponent(recentDates7, habits, completions, checkIns);
-    var activity = new AnalysisComponent(
-        Key: "activity",
-        LabelEs: "Actividad",
-        LabelEn: "Activity",
-        Score: null,
-        Status: "insufficient",
-        SummaryEs: "La actividad aun no esta conectada. Esta area quedara completa con actividades manuales o Strava.",
-        SummaryEn: "Activity is not connected yet. This area will be complete with manual activities or Strava.",
-        Evidence: []);
 
     var bodyData = BuildBodyDataSignal(measurements, bodyTrends);
-    var completeness = BuildDataCompleteness(checkIns, habits, completions, meals, measurements);
+    var completeness = BuildDataCompleteness(checkIns, habits, completions, meals, dailyActivities, measurements);
     var observations = BuildAnalysisObservations(
         checkIns,
         habits,
         completions,
         meals,
+        dailyActivities,
         bodyData,
         completeness);
 
@@ -821,6 +952,46 @@ static AnalysisResponse BuildAnalysisSummary(
         BodyData: bodyData,
         Completeness: completeness,
         Observations: observations);
+}
+
+static AnalysisComponent BuildActivityComponent(IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> dailyActivities)
+{
+    if (dailyActivities.Count == 0)
+    {
+        return new AnalysisComponent(
+            "activity",
+            "Actividad",
+            "Activity",
+            null,
+            "insufficient",
+            "Faltan datos de actividad. Apple Health puede enviarlos con un Atajo.",
+            "Activity data is missing. Apple Health can send it with a Shortcut.",
+            []);
+    }
+
+    var loggedDays = dailyActivities.Select(activity => activity.LocalDate).Distinct().Count();
+    var averageSteps = dailyActivities.Average(activity => activity.Steps);
+    var averageExerciseMinutes = dailyActivities.Average(activity => activity.ExerciseMinutes);
+    var averageActiveEnergy = dailyActivities.Average(activity => activity.ActiveEnergyKcal);
+    var loggingScore = Math.Clamp(loggedDays / 7m * 100m, 0m, 100m);
+    var stepsSignal = Math.Clamp((decimal)averageSteps / 8_000m * 100m, 0m, 100m);
+    var exerciseSignal = Math.Clamp((decimal)averageExerciseMinutes / 30m * 100m, 0m, 100m);
+    var score = (int)Math.Round(loggingScore * 0.35m + stepsSignal * 0.35m + exerciseSignal * 0.3m, 0);
+
+    return new AnalysisComponent(
+        "activity",
+        "Actividad",
+        "Activity",
+        score,
+        ScoreStatus(score),
+        $"Actividad en {loggedDays}/7 dias. Media: {Math.Round(averageSteps, 0)} pasos y {Math.Round(averageExerciseMinutes, 0)} min de ejercicio.",
+        $"Activity on {loggedDays}/7 days. Average: {Math.Round(averageSteps, 0)} steps and {Math.Round(averageExerciseMinutes, 0)} exercise minutes.",
+        [
+            $"loggedDays7:{loggedDays}",
+            $"stepsAverage:{Math.Round(averageSteps, 0)}",
+            $"exerciseMinutesAverage:{Math.Round(averageExerciseMinutes, 0)}",
+            $"activeEnergyAverageKcal:{Math.Round(averageActiveEnergy, 0)}"
+        ]);
 }
 
 static AnalysisComponent BuildRecoveryComponent(IReadOnlyList<PulseBoard.Api.Models.CheckIn> checkIns)
@@ -977,6 +1148,7 @@ static DataCompleteness BuildDataCompleteness(
     IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
     IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
     IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> dailyActivities,
     IReadOnlyCollection<PulseBoard.Api.Models.BodyMeasurement> measurements)
 {
     var present = new List<string>();
@@ -986,7 +1158,7 @@ static DataCompleteness BuildDataCompleteness(
     AddCompletenessSignal(habits.Count > 0 && completions.Count > 0, "habits", present, missing);
     AddCompletenessSignal(meals.Count > 0, "nutrition", present, missing);
     AddCompletenessSignal(measurements.Count >= 3, "body", present, missing);
-    AddCompletenessSignal(false, "activity", present, missing);
+    AddCompletenessSignal(dailyActivities.Count > 0, "activity", present, missing);
 
     var score = (int)Math.Round(present.Count / 5m * 100m, 0);
 
@@ -1014,6 +1186,7 @@ static AnalysisObservation[] BuildAnalysisObservations(
     IReadOnlyCollection<PulseBoard.Api.Models.Habit> habits,
     IReadOnlyCollection<PulseBoard.Api.Models.HabitCompletion> completions,
     IReadOnlyCollection<PulseBoard.Api.Models.Meal> meals,
+    IReadOnlyCollection<PulseBoard.Api.Models.DailyActivity> dailyActivities,
     BodyDataSignal bodyData,
     DataCompleteness completeness)
 {
@@ -1055,6 +1228,39 @@ static AnalysisObservation[] BuildAnalysisObservations(
                 "Hay margen para subir la constancia semanal de habitos.",
                 "There is room to improve weekly habit consistency.",
                 "0<habitCompletionRate7<80"));
+        }
+    }
+
+    if (dailyActivities.Count == 0)
+    {
+        observations.Add(new AnalysisObservation(
+            "activity",
+            "info",
+            "Aun faltan datos de Apple Health para analizar actividad.",
+            "Apple Health data is still needed to analyze activity.",
+            "activityDays7==0"));
+    }
+    else
+    {
+        var loggedDays = dailyActivities.Select(activity => activity.LocalDate).Distinct().Count();
+        var averageExerciseMinutes = dailyActivities.Average(activity => activity.ExerciseMinutes);
+        if (averageExerciseMinutes >= 30)
+        {
+            observations.Add(new AnalysisObservation(
+                "activity",
+                "positive",
+                "Los minutos de ejercicio registrados por Apple Health estan en buen nivel.",
+                "Exercise minutes logged by Apple Health are at a good level.",
+                "exerciseMinutesAverage>=30"));
+        }
+        else
+        {
+            observations.Add(new AnalysisObservation(
+                "activity",
+                "info",
+                $"Hay actividad registrada en {loggedDays}/7 dias.",
+                $"Activity is logged on {loggedDays}/7 days.",
+                "activityDays7>0"));
         }
     }
 
@@ -1137,6 +1343,31 @@ static string ScoreStatus(int score)
     return "needs-data";
 }
 
+static async Task<PulseBoard.Api.Models.DailyActivity> UpsertDailyActivityAsync(
+    PulseBoardDbContext db,
+    PulseBoard.Api.Models.DailyActivity activity)
+{
+    var existing = await db.DailyActivities.FirstOrDefaultAsync(current =>
+        current.UserId == activity.UserId
+        && current.LocalDate == activity.LocalDate
+        && current.Source == activity.Source);
+
+    if (existing is null)
+    {
+        db.DailyActivities.Add(activity);
+        await db.SaveChangesAsync();
+        return activity;
+    }
+
+    db.DailyActivities.Remove(existing);
+    await db.SaveChangesAsync();
+
+    db.DailyActivities.Add(activity);
+    await db.SaveChangesAsync();
+
+    return activity;
+}
+
 static DateOnly GetLocalDate(DateTimeOffset utcDateTime, string timeZoneId)
 {
     TimeZoneInfo timeZone;
@@ -1216,6 +1447,31 @@ static async Task EnsureDatabaseAsync(PulseBoardDbContext db)
         CREATE INDEX IF NOT EXISTS "IX_Meals_UserId_IsFavorite"
             ON "Meals" ("UserId", "IsFavorite");
         """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "DailyActivities" (
+            "Id" uuid NOT NULL,
+            "UserId" character varying(80) NOT NULL,
+            "LocalDate" character varying(10) NOT NULL,
+            "TimeZoneId" character varying(80) NOT NULL,
+            "Steps" integer NOT NULL,
+            "ActiveEnergyKcal" integer NOT NULL,
+            "ExerciseMinutes" integer NOT NULL,
+            "WalkingRunningDistanceKm" numeric(8,2) NULL,
+            "CyclingDistanceKm" numeric(8,2) NULL,
+            "WorkoutCount" integer NOT NULL,
+            "Source" character varying(40) NOT NULL,
+            "Notes" character varying(1000) NULL,
+            "RecordedAtUtc" timestamp with time zone NOT NULL,
+            "CreatedAtUtc" timestamp with time zone NOT NULL,
+            CONSTRAINT "PK_DailyActivities" PRIMARY KEY ("Id")
+        );
+        """);
+
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_DailyActivities_UserId_LocalDate_Source"
+            ON "DailyActivities" ("UserId", "LocalDate", "Source");
+        """);
 }
 
 public partial class Program;
@@ -1228,6 +1484,7 @@ public sealed record DashboardResponse(
     TodaySummary Today,
     HabitSummary Habits,
     NutritionSummary Nutrition,
+    ActivitySummary Activity,
     BodyDashboard Body,
     Insight[] Insights);
 
@@ -1257,6 +1514,20 @@ public sealed record NutritionTotals(
     decimal CarbohydrateGrams,
     decimal FatGrams,
     decimal VegetableMeals);
+
+public sealed record ActivitySummary(
+    ActivityTotals Today,
+    ActivityTotals Average7Days,
+    int LoggedDays7,
+    PulseBoard.Api.Models.DailyActivity[] LatestActivities);
+
+public sealed record ActivityTotals(
+    decimal Steps,
+    decimal ActiveEnergyKcal,
+    decimal ExerciseMinutes,
+    decimal WalkingRunningDistanceKm,
+    decimal CyclingDistanceKm,
+    decimal WorkoutCount);
 
 public sealed record BodyDashboard(
     PulseBoard.Api.Models.BodyMeasurement? Latest,

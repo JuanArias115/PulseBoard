@@ -52,6 +52,11 @@
       <p>{{ t('calories') }}</p>
       <strong>{{ formatNumber(nutrition()?.today?.caloriesKcal, ' kcal') }}</strong>
     </article>
+    <article>
+      <span><svg lucideActivity size="20" aria-hidden="true"></svg></span>
+      <p>{{ t('exercise') }}</p>
+      <strong>{{ dashboard().activity }}</strong>
+    </article>
   </section>
 
   <section class="dashboard-grid">
@@ -152,6 +157,35 @@
         <div>
           <dt>{{ t('fat') }}</dt>
           <dd>{{ formatNumber(nutrition()?.today?.fatGrams, ' g') }}</dd>
+        </div>
+      </dl>
+    </article>
+
+    <article class="panel activity-panel">
+      <div class="panel-heading">
+        <span><svg lucideActivity size="22" aria-hidden="true"></svg></span>
+        <div>
+          <p>Apple Health</p>
+          <strong>{{ t('activity') }}</strong>
+        </div>
+      </div>
+
+      <dl class="nutrition-totals">
+        <div>
+          <dt>{{ t('steps') }}</dt>
+          <dd>{{ formatNumber(activity()?.today?.steps, '') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('activeEnergy') }}</dt>
+          <dd>{{ formatNumber(activity()?.today?.activeEnergyKcal, ' kcal') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('exercise') }}</dt>
+          <dd>{{ formatNumber(activity()?.today?.exerciseMinutes, ' min') }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('sevenDays') }}</dt>
+          <dd>{{ activity()?.loggedDays7 || 0 }}/7</dd>
         </div>
       </dl>
     </article>

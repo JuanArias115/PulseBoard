@@ -207,6 +207,45 @@ public sealed class ApiSmokeTests
     }
 
     [Fact]
+    public async Task AppleHealthBridge_Can_Upsert_Daily_Activity_With_Key()
+    {
+        using var application = CreateApplication();
+        var client = application.CreateClient();
+        var today = GetViennaDate();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/integrations/apple-health/daily-activity")
+        {
+            Content = JsonContent.Create(new
+            {
+                localDate = today,
+                steps = 8450,
+                activeEnergyKcal = 520,
+                exerciseMinutes = 42,
+                walkingRunningDistanceKm = 5.8m,
+                cyclingDistanceKm = 0,
+                workoutCount = 1,
+                notes = "Apple Health Shortcut"
+            })
+        };
+        request.Headers.Add("X-PulseBoard-Bridge-Key", "test-bridge-key");
+
+        var response = await client.SendAsync(request);
+        var summaryResponse = await client.GetAsync($"/api/v1/activity-summary?localDate={today}");
+        var analysisResponse = await client.GetAsync("/api/v1/analysis");
+        var summary = await summaryResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var analysis = await analysisResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, summaryResponse.StatusCode);
+        Assert.Equal(8450, summary.GetProperty("today").GetProperty("steps").GetDecimal());
+        Assert.Equal(42, summary.GetProperty("today").GetProperty("exerciseMinutes").GetDecimal());
+        Assert.Contains(analysis.GetProperty("completeness").GetProperty("presentDomains").EnumerateArray(), domain => domain.GetString() == "activity");
+        Assert.Contains(analysis.GetProperty("components").EnumerateArray(), component =>
+            component.GetProperty("key").GetString() == "activity"
+            && component.GetProperty("score").ValueKind == JsonValueKind.Number);
+    }
+
+    [Fact]
     public async Task AppleHealthBridge_Requires_Key()
     {
         using var application = CreateApplication();

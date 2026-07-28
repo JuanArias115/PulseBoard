@@ -65,6 +65,19 @@ interface BodyMeasurement {
   source: string;
 }
 
+interface DailyActivity {
+  id: string;
+  localDate: string;
+  steps: number;
+  activeEnergyKcal: number;
+  exerciseMinutes: number;
+  walkingRunningDistanceKm?: number;
+  cyclingDistanceKm?: number;
+  workoutCount: number;
+  source: string;
+  recordedAtUtc: string;
+}
+
 interface Meal {
   id: string;
   localDate: string;
@@ -98,6 +111,7 @@ interface DashboardSummary {
     streakDays: number;
   };
   nutrition: NutritionSummary;
+  activity: ActivitySummary;
   body: {
     latest?: BodyMeasurement;
     trends: TrendMetric[];
@@ -167,6 +181,22 @@ interface NutritionTotals {
   vegetableMeals: number;
 }
 
+interface ActivitySummary {
+  today: ActivityTotals;
+  average7Days: ActivityTotals;
+  loggedDays7: number;
+  latestActivities: DailyActivity[];
+}
+
+interface ActivityTotals {
+  steps: number;
+  activeEnergyKcal: number;
+  exerciseMinutes: number;
+  walkingRunningDistanceKm: number;
+  cyclingDistanceKm: number;
+  workoutCount: number;
+}
+
 interface TrendMetric {
   key: string;
   labelEs: string;
@@ -206,6 +236,8 @@ const translations = {
     analysis: 'Analisis',
     apiOffline: 'API sin conexion',
     apiOnline: 'API conectada',
+    activeEnergy: 'Energia activa',
+    activity: 'Actividad',
     body: 'Composicion',
     carbs: 'Carbohidratos',
     calories: 'Calorias',
@@ -219,6 +251,7 @@ const translations = {
     dinner: 'Cena',
     energy: 'Energia',
     estimatedCalories: 'Calorias estimadas',
+    exercise: 'Ejercicio',
     fatigue: 'Fatiga',
     food: 'Alimentacion',
     fat: 'Grasas',
@@ -255,6 +288,7 @@ const translations = {
     soreness: 'Dolor muscular',
     source: 'Fuente',
     status: 'Estado',
+    steps: 'Pasos',
     stress: 'Estres',
     timezone: 'Zona horaria',
     today: 'Hoy',
@@ -270,6 +304,8 @@ const translations = {
     analysis: 'Analysis',
     apiOffline: 'API offline',
     apiOnline: 'API connected',
+    activeEnergy: 'Active energy',
+    activity: 'Activity',
     body: 'Body',
     carbs: 'Carbs',
     calories: 'Calories',
@@ -283,6 +319,7 @@ const translations = {
     dinner: 'Dinner',
     energy: 'Energy',
     estimatedCalories: 'Estimated calories',
+    exercise: 'Exercise',
     fatigue: 'Fatigue',
     food: 'Nutrition',
     fat: 'Fat',
@@ -319,6 +356,7 @@ const translations = {
     soreness: 'Muscle soreness',
     source: 'Source',
     status: 'Status',
+    steps: 'Steps',
     stress: 'Stress',
     timezone: 'Time zone',
     today: 'Today',
@@ -363,6 +401,7 @@ export class App {
   readonly checkIns = signal<CheckIn[]>([]);
   readonly measurements = signal<BodyMeasurement[]>([]);
   readonly meals = signal<Meal[]>([]);
+  readonly dailyActivities = signal<DailyActivity[]>([]);
   readonly dashboardSummary = signal<DashboardSummary | null>(null);
   readonly analysisSummary = signal<AnalysisSummary | null>(null);
   readonly message = signal('');
@@ -397,12 +436,14 @@ export class App {
           ? `${latestCheckIn.recovery}/5`
           : '-',
       habits: total > 0 ? `${completed}/${total}` : '0',
+      activity: summary ? `${summary.activity.today.exerciseMinutes} min` : '-',
     };
   });
 
   readonly bodyTrends = computed(() => this.dashboardSummary()?.body.trends ?? []);
   readonly insights = computed(() => this.dashboardSummary()?.insights ?? []);
   readonly nutrition = computed(() => this.dashboardSummary()?.nutrition);
+  readonly activity = computed(() => this.dashboardSummary()?.activity);
   readonly analysisComponents = computed(() => this.analysisSummary()?.components ?? []);
   readonly analysisObservations = computed(() => this.analysisSummary()?.observations ?? []);
 
@@ -501,8 +542,9 @@ export class App {
       checkIns: this.http.get<CheckIn[]>('/api/v1/check-ins?limit=7'),
       measurements: this.http.get<BodyMeasurement[]>('/api/v1/body-measurements?limit=7'),
       meals: this.http.get<Meal[]>(`/api/v1/meals?localDate=${this.mealForm.localDate}`),
+      dailyActivities: this.http.get<DailyActivity[]>('/api/v1/daily-activities?limit=7'),
     }).subscribe({
-      next: ({ meta, dashboard, analysis, habits, completions, checkIns, measurements, meals }) => {
+      next: ({ meta, dashboard, analysis, habits, completions, checkIns, measurements, meals, dailyActivities }) => {
         this.meta.set(meta);
         this.dashboardSummary.set(dashboard);
         this.analysisSummary.set(analysis);
@@ -511,6 +553,7 @@ export class App {
         this.checkIns.set(checkIns);
         this.measurements.set(measurements);
         this.meals.set(meals);
+        this.dailyActivities.set(dailyActivities);
         this.apiStatus.set('online');
       },
       error: () => this.apiStatus.set('offline'),

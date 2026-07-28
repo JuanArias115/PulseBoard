@@ -124,7 +124,7 @@
 
 .summary-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 
@@ -170,6 +170,10 @@
   background: #ff9f0a;
 }
 
+.summary-strip article:nth-child(6) > span {
+  background: #34c759;
+}
+
 .toast {
   margin-bottom: 16px;
   padding: 11px 14px;
@@ -189,7 +193,7 @@
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1.25fr 0.85fr 0.9fr 0.85fr;
+  grid-template-columns: 1.2fr 0.85fr 0.9fr 0.85fr 0.85fr;
   gap: 16px;
   align-items: stretch;
   margin-bottom: 16px;

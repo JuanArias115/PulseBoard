@@ -159,6 +159,33 @@ Devuelve totales del dia, promedio de los ultimos 7 dias con datos y ultimas com
 
 La primera version no calcula objetivos nutricionales automaticos. Solo registra y resume datos.
 
+## Daily activity
+
+`GET /api/v1/daily-activities?limit=30`
+
+Devuelve los ultimos registros diarios de actividad.
+
+`GET /api/v1/activity-summary?localDate=2026-07-28`
+
+Devuelve actividad del dia, promedios de los ultimos 7 dias con datos y ultimos registros.
+
+`POST /api/v1/daily-activities`
+
+```json
+{
+  "localDate": "2026-07-28",
+  "steps": 8450,
+  "activeEnergyKcal": 520,
+  "exerciseMinutes": 42,
+  "walkingRunningDistanceKm": 5.8,
+  "cyclingDistanceKm": 0,
+  "workoutCount": 1,
+  "notes": "Manual entry"
+}
+```
+
+Este endpoint hace upsert por `UserId + LocalDate + Source`, para que un dia no se duplique si se vuelve a enviar.
+
 ## POST /body-measurements
 
 ```json
@@ -197,3 +224,32 @@ X-PulseBoard-Bridge-Key: <server bridge key>
 ```
 
 Este endpoint esta pensado para un Atajo de iPhone o una app iOS puente. La clave vive solo en `/opt/pulseboard/.env`; no debe estar en GitHub, Angular ni documentacion publica.
+
+## Apple Health daily activity bridge
+
+```text
+POST /api/v1/integrations/apple-health/daily-activity
+```
+
+Header obligatorio:
+
+```text
+X-PulseBoard-Bridge-Key: <server bridge key>
+```
+
+Body esperado:
+
+```json
+{
+  "localDate": "2026-07-28",
+  "steps": 8450,
+  "activeEnergyKcal": 520,
+  "exerciseMinutes": 42,
+  "walkingRunningDistanceKm": 5.8,
+  "cyclingDistanceKm": 0,
+  "workoutCount": 1,
+  "notes": "Apple Health via Shortcuts"
+}
+```
+
+El registro queda con `source = AppleHealth`. Si el Atajo se ejecuta varias veces el mismo dia, reemplaza el dato anterior del dia en lugar de crear duplicados.
