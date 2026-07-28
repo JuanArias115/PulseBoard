@@ -124,9 +124,9 @@ Body esperado:
 ```json
 {
   "localDate": "2026-07-28",
-  "heartRateBpm": 59,
-  "restingHeartRateBpm": 60,
-  "heartRateVariabilityMs": 26,
+  "heartRate": 59,
+  "restingHeartRate": 60,
+  "heartRateVariability": 26,
   "bloodOxygenPercentage": 95,
   "respiratoryRateBreathsPerMinute": 18,
   "sleepHours": 6.8,
@@ -252,7 +252,7 @@ Crear un atajo llamado `Enviar recuperacion a PulseBoard`:
 7. Buscar la ultima muestra de `Frecuencia respiratoria`.
 8. Buscar muestras de `Sueno` de hoy o de la ultima noche y sumar horas dormidas.
 9. Opcional: buscar `Cardio fitness` / VO2 max y `Frecuencia cardiaca media caminando`.
-10. Crear diccionario JSON con los campos del body de recuperacion.
+10. Crear diccionario JSON con los campos del body de recuperacion. En Atajos puedes usar `heartRate` y `heartRateVariability` directamente.
 11. Enviar por POST a:
 
 ```text

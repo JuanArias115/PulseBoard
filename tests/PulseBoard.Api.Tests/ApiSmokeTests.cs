@@ -325,8 +325,9 @@ public sealed class ApiSmokeTests
             Content = JsonContent.Create(new Dictionary<string, object?>
             {
                 ["localDate"] = today,
+                ["heartRate"] = "59 BPM",
                 ["restingHeartRate"] = "60 BPM",
-                ["hrv"] = "26 ms",
+                ["heartRateVariability"] = "26 ms",
                 ["bloodOxygen"] = "95%",
                 ["respiratoryRate"] = "18 breaths/min",
                 ["timeAsleepHours"] = "6,8",

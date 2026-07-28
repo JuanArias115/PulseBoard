@@ -326,4 +326,4 @@ Body esperado:
 }
 ```
 
-Tambien acepta alias practicos como `heartRate`, `restingHeartRate`, `hrv`, `bloodOxygen`, `respiratoryRate`, `timeAsleepHours`, `cardioFitness` y `walkingHeartRateAverage`.
+Tambien acepta alias practicos como `heartRate`, `restingHeartRate`, `heartRateVariability`, `heartRateVariabilitySDNN`, `hrv`, `bloodOxygen`, `respiratoryRate`, `timeAsleepHours`, `cardioFitness` y `walkingHeartRateAverage`.

@@ -1826,9 +1826,9 @@ static bool TryBuildDailyRecoveryRequest(
     errors = new Dictionary<string, string[]>();
 
     var localDate = ReadString(payload, "localDate", errors);
-    var heartRateBpm = ReadNullableIntAny(payload, ["heartRateBpm", "heartRate"], errors);
+    var heartRateBpm = ReadNullableIntAny(payload, ["heartRateBpm", "heartRate", "heardRate"], errors);
     var restingHeartRateBpm = ReadNullableIntAny(payload, ["restingHeartRateBpm", "restingHeartRate"], errors);
-    var heartRateVariabilityMs = ReadNullableDecimalAny(payload, ["heartRateVariabilityMs", "hrvMs", "hrv"], errors);
+    var heartRateVariabilityMs = ReadNullableDecimalAny(payload, ["heartRateVariabilityMs", "heartRateVariability", "heartRateVariabilitySDNN", "hrvMs", "hrv"], errors);
     var bloodOxygenPercentage = ReadNullableDecimalAny(payload, ["bloodOxygenPercentage", "bloodOxygen"], errors);
     var respiratoryRateBreathsPerMinute = ReadNullableDecimalAny(payload, ["respiratoryRateBreathsPerMinute", "respiratoryRate"], errors);
     var sleepHours = ReadNullableDecimalAny(payload, ["sleepHours", "timeAsleepHours", "timeAsleep"], errors);
