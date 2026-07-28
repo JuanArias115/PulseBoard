@@ -79,7 +79,7 @@ api.MapGet("/profile", (IConfiguration configuration) =>
         userId = "local-dev",
         displayName = "Juan",
         preferredLanguage = options.DefaultLanguage,
-        supportedLanguages = options.SupportedLanguages,
+        supportedLanguages = GetSupportedLanguages(options),
         timeZoneId = options.TimeZoneId,
         units = new
         {
@@ -102,7 +102,7 @@ api.MapGet("/meta", (IConfiguration configuration) =>
         name = "PulseBoard",
         status = "online",
         defaultLanguage = options.DefaultLanguage,
-        supportedLanguages = options.SupportedLanguages,
+        supportedLanguages = GetSupportedLanguages(options),
         timeZoneId = options.TimeZoneId,
         units = "metric",
         modules = new[] { "check-in", "habits", "body-measurements", "nutrition", "activity" }
@@ -311,6 +311,13 @@ static string GetRequiredConnectionSetting(IConfiguration configuration, string 
 
     return value;
 }
+
+static string[] GetSupportedLanguages(PulseBoardOptions options)
+    => options.SupportedLanguages
+        .Where(language => !string.IsNullOrWhiteSpace(language))
+        .Select(language => language.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
 
 static async Task EnsureDatabaseAsync(PulseBoardDbContext db)
 {
